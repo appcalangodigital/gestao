@@ -12,17 +12,17 @@
 :root{--bg:#ffffff;--card:#fff;--ink:#0a2350;--mut:#5a6b8c;--pri:#0f4fa8;--sky:#3b9be8;--on:#fff;--line:#d5e3f7;--ok:#1f7a4d;--err:#b3261e}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
-main{max-width:520px;margin:0 auto;padding:14px 14px 40px}
+main{max-width:520px;margin:0 auto;padding:14px 18px 40px}
 .back{background:none;border:0;color:var(--pri);font:600 1rem system-ui;padding:8px 0;cursor:pointer}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;max-width:340px;margin:0 auto;padding:0 10px}
 .welcome{text-align:center;margin:0 0 16px}
 .welcome img{display:block;margin:0 auto 6px;width:100%;max-width:420px;height:auto}
 .welcome b{display:block;font-size:1.25rem;margin-top:4px;color:#0a2350}
 .welcome span{font-size:.95rem;color:#5a6b8c}
-.tile{border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:20px 10px;min-height:112px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font:600 1rem system-ui,sans-serif;cursor:pointer;color:#fff;background:#0e2146;box-shadow:0 4px 12px rgba(10,35,80,.25)}
-.tile .ic{font-size:2.1rem;line-height:1}
+.tile{border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px 8px;min-height:92px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font:600 .92rem system-ui,sans-serif;cursor:pointer;color:#fff;background:#0e2146;box-shadow:0 4px 12px rgba(10,35,80,.25)}
+.tile .ic{font-size:1.7rem;line-height:1}
 .tile.soon{opacity:.5;cursor:default}
-.tile small{font-weight:400;font-size:.75rem;opacity:.8;margin-top:-6px}
+.tile small{font-weight:400;font-size:.7rem;opacity:.8;margin-top:-2px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:12px}
 h2{font-size:1.25rem;margin:4px 0 12px;color:var(--pri)}
 video{width:100%;border-radius:12px;background:#000;display:none;aspect-ratio:4/3;object-fit:cover}
