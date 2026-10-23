@@ -65,18 +65,27 @@ const $=id=>document.getElementById(id);
 const app=$('app');
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const store={get(k,d){try{return JSON.parse(localStorage.getItem('calango:'+k))||d}catch(e){return d}},set(k,v){try{localStorage.setItem('calango:'+k,JSON.stringify(v))}catch(e){}}};
-let limpar=null;
+let limpar=null,voltaAtual=null,porVoltar=false;
 
 function inicio(){
   if(limpar){limpar();limpar=null}
+  voltaAtual=null;
   app.innerHTML='<div class="grid">'+MODULES.map(m=>'<button class="tile" data-m="'+m.id+'"><span class="ic">'+m.icone+'</span>'+esc(m.titulo)+'</button>').join('')+'<div class="tile off"><span class="ic">＋</span>Em breve</div></div>';
   app.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>MODULES.find(m=>m.id===b.dataset.m).abrir());
 }
 function telaModulo(t,html,volta){
   if(limpar){limpar();limpar=null}
+  voltaAtual=volta||inicio;
+  if(!porVoltar)history.pushState({t:1},'');
   app.innerHTML='<button class="back" id="voltar">‹ Voltar</button><h2>'+esc(t)+'</h2>'+html;
-  $('voltar').onclick=volta||inicio;
+  $('voltar').onclick=()=>history.back();
 }
+/* botão voltar do celular: volta uma tela do app */
+window.addEventListener('popstate',()=>{
+  if(!voltaAtual)return;
+  const f=voltaAtual;porVoltar=true;
+  try{f()}finally{porVoltar=false}
+});
 function menu(t,tiles,volta){
   telaModulo(t,'<div class="grid">'+tiles.map((x,i)=>'<button class="tile" data-i="'+i+'"><span class="ic">'+x.ic+'</span>'+esc(x.t)+'</button>').join('')+'</div>',volta);
   app.querySelectorAll('[data-i]').forEach(b=>b.onclick=tiles[b.dataset.i].f);
