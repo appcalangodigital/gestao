@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#ffffff">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
@@ -11,7 +11,10 @@
 <style>
 :root{--bg:#ffffff;--card:#fff;--ink:#0a2350;--mut:#5a6b8c;--pri:#0f4fa8;--sky:#3b9be8;--on:#fff;--line:#d5e3f7;--ok:#1f7a4d;--err:#b3261e}
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overflow-x:hidden}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overflow-x:hidden;overflow-x:clip;max-width:100%}
+html,body{touch-action:pan-y pinch-zoom;overscroll-behavior-x:none}
+body{overflow-x:hidden;overflow-x:clip;max-width:100%}
+img{max-width:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
 main{width:100%;max-width:520px;margin:0 auto;padding:18px max(22px,env(safe-area-inset-left)) 40px max(22px,env(safe-area-inset-left))}
 .back{display:inline-flex;align-items:center;gap:6px;background:#eaf1fc;border:0;color:var(--pri);font:700 .95rem system-ui,sans-serif;padding:9px 16px;border-radius:999px;cursor:pointer;margin:2px 0 10px}
@@ -51,6 +54,24 @@ input[type=text]{flex:1;min-width:0;padding:13px;border-radius:12px;border:1px s
 #print{display:none}
 @media print{main{display:none!important}body{background:#fff}#print{display:block;color:#000;padding:12px}#print .tb th,#print .tb td{border-color:#999}}
 label.chk{display:flex;gap:8px;align-items:center;margin:10px 0;color:var(--mut);font-size:.9rem}
+.ov{position:fixed;inset:0;z-index:50;background:rgba(10,35,80,.45);display:flex;align-items:center;justify-content:center;padding:22px;animation:fd .15s ease-out}
+@keyframes fd{from{opacity:0}to{opacity:1}}
+.dlg{width:100%;max-width:340px;background:#fff;border-radius:24px;padding:22px 20px 18px;box-shadow:0 18px 50px rgba(10,35,80,.35);color:var(--ink)}
+.dlg h3{margin:0 0 4px;font-size:1.25rem;font-weight:800;color:#0a2f7a}
+.dlg .dsub{font-weight:700;color:var(--mut);margin-bottom:12px;overflow-wrap:anywhere}
+.dlg p{margin:6px 0 12px;color:var(--mut);font-size:.95rem}
+.dlg label.fl{display:block;font-size:.8rem;font-weight:700;color:var(--mut);margin:12px 0 0}
+.dlg input{display:block;width:100%;margin-top:5px;padding:13px 14px;border:1.5px solid var(--line);border-radius:14px;background:#f6f9ff;color:var(--ink);font:600 1rem system-ui,sans-serif;outline:none}
+.dlg input:focus{border-color:var(--pri);background:#fff}
+.dlg .qs{display:flex;gap:10px;align-items:center;margin-top:6px}
+.dlg .qs input{margin:0;text-align:center;font-size:1.6rem;font-weight:800;color:var(--pri);padding:10px 6px}
+.dlg .qs button{flex:0 0 52px;height:52px;padding:0;font-size:1.6rem;border-radius:16px}
+.dlg details{margin-top:14px}
+.dlg summary{cursor:pointer;color:var(--pri);font-weight:700;font-size:.9rem;padding:4px 0}
+.dbt{display:flex;gap:10px;margin-top:20px}
+.dbt button{flex:1;padding:14px 8px;border-radius:14px}
+.dbt button.b:not(.alt){background:linear-gradient(145deg,#0e2a60,#1760c4)}
+.toast{position:fixed;left:50%;bottom:calc(28px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:60;background:#0e2a60;color:#fff;padding:12px 20px;border-radius:999px;font:600 .95rem system-ui,sans-serif;box-shadow:0 8px 24px rgba(10,35,80,.3);max-width:88%;text-align:center}
 </style>
 </head>
 <body>
@@ -97,23 +118,50 @@ function menu(t,tiles,volta){
 }
 
 /* ===== Ligação com a planilha (Google Sheets via Apps Script) ===== */
+/* ===== Caixas de diálogo do app (no lugar das janelas do navegador) ===== */
+const campo=(id,rot,val,tipo,extra)=>'<label class="fl">'+esc(rot)+'<input data-f="'+id+'" type="'+(tipo||'text')+'" value="'+esc(val==null?'':val)+'" autocomplete="off" '+(extra||'')+'></label>';
+function caixa(o){return new Promise(res=>{
+  const ov=document.createElement('div');ov.className='ov';
+  ov.innerHTML='<div class="dlg" role="dialog" aria-modal="true"><h3>'+esc(o.titulo)+'</h3>'+(o.sub?'<div class="dsub">'+esc(o.sub)+'</div>':'')+(o.texto?'<p>'+esc(o.texto)+'</p>':'')+(o.html||'')+
+    '<div class="dbt">'+(o.semCancelar?'':'<button class="b alt" data-x="0">'+esc(o.cancelar||'Cancelar')+'</button>')+'<button class="b" data-x="1">'+esc(o.ok||'OK')+'</button></div></div>';
+  document.body.appendChild(ov);
+  const fim=v=>{ov.remove();res(v)};
+  const ler=()=>{const r={};ov.querySelectorAll('[data-f]').forEach(i=>r[i.dataset.f]=i.value);return r};
+  ov.onclick=e=>{
+    const st=e.target.closest('[data-st]');
+    if(st){const i=ov.querySelector('[data-f="qtd"]');i.value=String(Math.max(0,Math.round(((Number(String(i.value).replace(',','.'))||0)+Number(st.dataset.st))*1000)/1000)).replace('.',',');return}
+    const x=e.target.closest('[data-x]');
+    if(x)fim(x.dataset.x==='1'?ler():null);
+    else if(e.target===ov&&!o.semCancelar)fim(null);
+  };
+  ov.onkeydown=e=>{
+    if(e.key==='Escape'&&!o.semCancelar)fim(null);
+    if(e.key==='Enter'&&e.target.tagName==='INPUT'){e.preventDefault();fim(ler())}
+  };
+  const f=ov.querySelector('[data-f]');if(f){f.focus();if(f.select)f.select()}
+})}
+const confirmar=(titulo,texto,ok)=>caixa({titulo,texto,ok:ok||'Confirmar'});
+const avisar=(titulo,texto)=>caixa({titulo,texto,ok:'OK',semCancelar:true});
+function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2200)}
+
 const URL_PADRAO='https://script.google.com/macros/s/AKfycbz4fD7qep9_cmuIxykk4-bqWJtVVo7zBZPkWI8Tq3t_Q836YiPF7AsJLofPWBb3F1_s/exec';
-function cfg(forcar){
+async function cfg(forcar){
   let c=store.get('planilha',{url:'',token:''});
   c.url=URL_PADRAO;
   if(forcar||!c.token){
-    const t=prompt('Senha da planilha (a mesma que você definiu no script):',c.token);if(t===null)return null;
-    c.token=t.trim();store.set('planilha',c);
+    const r=await caixa({titulo:'Senha da planilha',texto:'Digite a mesma senha que você definiu no script.',html:campo('t','Senha',c.token),ok:'Salvar'});
+    if(!r)return null;
+    c.token=r.t.trim();store.set('planilha',c);
   }
   return c;
 }
-async function apiGet(p){const c=cfg();if(!c)throw new Error('config');
+async function apiGet(p){const c=await cfg();if(!c)throw new Error('config');
   const r=await fetch(c.url+'?'+new URLSearchParams({token:c.token,...p}));return r.json()}
-async function apiPost(b){const c=cfg();if(!c)throw new Error('config');
+async function apiPost(b){const c=await cfg();if(!c)throw new Error('config');
   const r=await fetch(c.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({token:c.token,...b})});return r.json()}
 async function compartilhar(txt){
   try{if(navigator.share){await navigator.share({text:txt});return}}catch(e){return}
-  try{await navigator.clipboard.writeText(txt);alert('Copiado.')}catch(e){prompt('Copie:',txt)}
+  try{await navigator.clipboard.writeText(txt);toast('Copiado.')}catch(e){await caixa({titulo:'Copie o texto',html:campo('t','Texto',txt),ok:'OK',semCancelar:true})}
 }
 
 /* ===== Contagem de estoque ===== */
@@ -175,14 +223,14 @@ function abrirContagem(){
     else if(t.dataset.m){cnt[t.dataset.m]=Math.max(0,cnt[t.dataset.m]-1);save();render()}
     else if(t.dataset.e){
       const c=t.dataset.e,p=cat[c]||{name:'',size:''};
-      const n=prompt('Nome do produto:',p.name);if(n===null)return;
-      const s=prompt('Medida (ex: 500 g):',p.size);
-      cat[c]={name:n.trim(),size:(s||'').trim()};save();render();
+      caixa({titulo:'Editar produto',html:campo('n','Nome do produto',p.name)+campo('m','Medida (ex: 500 g)',p.size),ok:'Salvar'}).then(r=>{
+        if(!r)return;cat[c]={name:r.n.trim(),size:r.m.trim()};save();render();
+      });
     }
   };
   $('add').onclick=()=>{contar($('man').value);$('man').value=''};
-  $('reset').onclick=()=>{if(confirm('Zerar a contagem atual? O estoque salvo na planilha não muda.')){cnt={};save();render();$('cmp').innerHTML='';msg('Contagem zerada.')}};
-  $('cfgb').onclick=()=>{if(cfg(true))msg('<span class="ok">Planilha configurada.</span>')};
+  $('reset').onclick=async()=>{if(await confirmar('Zerar contagem?','O estoque salvo na planilha não muda.','Zerar')){cnt={};save();render();$('cmp').innerHTML='';msg('Contagem zerada.')}};
+  $('cfgb').onclick=async()=>{if(await cfg(true))msg('<span class="ok">Planilha configurada.</span>')};
 
   $('fim').onclick=async()=>{
     if(!Object.keys(cnt).length){msg('Nenhum item lido.');return}
@@ -323,21 +371,22 @@ async function abrirSaldo(){
     const ks=Object.keys(d.itens).filter(k=>d.itens[k].qtd>0).sort((a,b)=>(d.itens[a].nome||a).localeCompare(d.itens[b].nome||b));
     if(!ks.length){$('sd').textContent='Ainda não há estoque salvo. Faça a primeira contagem.';return}
     $('sd').innerHTML='<div class="tot"><span>Produtos: '+ks.length+'</span><span>Unidades: '+ks.reduce((s,k)=>s+d.itens[k].qtd,0)+'</span></div>'+
-      '<div class="sub" style="margin-bottom:6px">Toque em “editar” para corrigir nome, medida ou quantidade.</div>'+
-      ks.map(k=>{const i=d.itens[k];return'<div class="item"><div class="info"><div class="nm">'+esc(i.nome||k)+'</div><div class="sub">'+esc(i.medida||'')+'</div><button class="ed" data-ed="'+k+'">editar</button></div><div class="qty"><b>'+i.qtd+'</b></div></div>'}).join('');
+      '<div class="sub" style="margin-bottom:6px">Toque em “editar quantidade” para corrigir o estoque.</div>'+
+      ks.map(k=>{const i=d.itens[k];return'<div class="item"><div class="info"><div class="nm">'+esc(i.nome||k)+'</div><div class="sub">'+esc(i.medida||'')+'</div><button class="ed" data-ed="'+k+'">editar quantidade</button></div><div class="qty"><b>'+i.qtd+'</b></div></div>'}).join('');
     $('sd').onclick=async e=>{
       const k=e.target.dataset.ed;if(!k)return;
       const i=d.itens[k];
-      const n=prompt('Nome do produto:',i.nome||'');if(n===null)return;
-      const m=prompt('Medida (ex: 500 g):',i.medida||'');if(m===null)return;
-      const q=prompt('Quantidade em estoque:',i.qtd);if(q===null)return;
-      const qn=Number(String(q).replace(',','.'));
-      if(!isFinite(qn)||qn<0){alert('Quantidade inválida.');return}
+      const r0=await caixa({titulo:'Editar quantidade',sub:(i.nome||k)+(i.medida?' · '+i.medida:''),
+        html:'<label class="fl">Quantidade em estoque</label><div class="qs"><button type="button" class="b alt" data-st="-1">−</button><input data-f="qtd" inputmode="decimal" value="'+esc(i.qtd)+'"><button type="button" class="b alt" data-st="1">+</button></div>'+
+        '<details><summary>Corrigir nome e medida</summary>'+campo('n','Nome do produto',i.nome||'')+campo('m','Medida (ex: 500 g)',i.medida||'')+'</details>',ok:'Salvar'});
+      if(!r0)return;
+      const qn=Number(String(r0.qtd).replace(',','.'));
+      if(String(r0.qtd).trim()===''||!isFinite(qn)||qn<0){await avisar('Quantidade inválida','Digite um número igual ou maior que zero.');return}
       try{
-        const r=await apiPost({acao:'ajustar',codigo:k,nome:n.trim(),medida:m.trim(),qtd:qn});
-        if(r.ok){porVoltar=true;abrirSaldo();porVoltar=false}
-        else alert('A planilha recusou: '+(r.erro==='produto não encontrado'?'produto não encontrado':(r.erro||'erro'))+'. Se o erro for de ação, atualize o script.');
-      }catch(err){alert('Não consegui salvar. Confira a internet.')}
+        const r=await apiPost({acao:'ajustar',codigo:k,nome:r0.n.trim(),medida:r0.m.trim(),qtd:qn});
+        if(r.ok){porVoltar=true;abrirSaldo();porVoltar=false;toast('Quantidade salva.')}
+        else await avisar('A planilha recusou',(r.erro==='produto não encontrado'?'Produto não encontrado':(r.erro||'Erro'))+'. Se o erro for de ação, atualize o script.');
+      }catch(err){await avisar('Não consegui salvar','Confira a internet e tente de novo.')}
     };
   }catch(e){$('sd').innerHTML='<span class="err">'+msgErro(e)+'</span>'}
 }
@@ -358,7 +407,7 @@ function abrirConfig(){
   const c=store.get('planilha',{url:''});
   telaModulo('Configurações','<div class="card"><div class="sub">Planilha (endereço já incluído no app)</div><div class="nm" id="st">'+(c.token?'Senha salva neste celular':'Falta a senha (toque em Alterar senha)')+'</div>'+
     '<button class="b wide" id="alt">Alterar senha</button><button class="b alt wide" id="tst">Testar conexão</button><div id="rs" style="margin-top:10px;font-weight:600"></div></div>',abrirEstoque);
-  $('alt').onclick=()=>{const n=cfg(true);if(n)$('st').textContent='Senha salva neste celular'};
+  $('alt').onclick=async()=>{const n=await cfg(true);if(n)$('st').textContent='Senha salva neste celular'};
   $('tst').onclick=async()=>{
     $('rs').textContent='Testando…';
     try{const d=await apiGet({action:'saldo'});
