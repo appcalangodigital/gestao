@@ -15,12 +15,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-ap
 main{max-width:520px;margin:0 auto;padding:14px 14px 40px}
 .back{background:none;border:0;color:var(--pri);font:600 1rem system-ui;padding:8px 0;cursor:pointer}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.top{text-align:center;padding:18px 12px 0;line-height:.98;font-family:'Poppins','Montserrat','Nunito','Segoe UI',system-ui,-apple-system,Roboto,sans-serif}
-.top span{display:block;font-weight:800;font-size:2.5rem;letter-spacing:-.5px}
-.top .n1{color:#0a2f7a}
-.top .n2{color:#1f78d1}
-.welcome{text-align:center;margin:6px 0 16px}
-.welcome img{display:block;margin:0 auto;width:210px;height:210px;object-fit:contain}
+.welcome{text-align:center;margin:0 0 16px}
+.welcome img{display:block;margin:0 auto 6px;width:100%;max-width:420px;height:auto}
 .welcome b{display:block;font-size:1.25rem;margin-top:4px;color:#0a2350}
 .welcome span{font-size:.95rem;color:#5a6b8c}
 .tile{border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:20px 10px;min-height:112px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font:600 1rem system-ui,sans-serif;cursor:pointer;color:#fff;background:#0e2146;box-shadow:0 4px 12px rgba(10,35,80,.25)}
@@ -55,7 +51,6 @@ label.chk{display:flex;gap:8px;align-items:center;margin:10px 0;color:var(--mut)
 </style>
 </head>
 <body>
-<div class="top"><span class="n1">Calango</span><span class="n2">Digital</span></div>
 <main>
 <div id="app"></div>
 </main>
@@ -75,7 +70,7 @@ const EM_BREVE=[['📅','Vencimentos'],['💲','Financeiro'],['📁','Documentos
 function inicio(){
   if(limpar){limpar();limpar=null}
   voltaAtual=null;
-  app.innerHTML='<div class="welcome"><img src="logo.png" alt="Calango Digital"><b>Bem-vindo(a)!</b><span>Seus serviços organizados em um só lugar.</span></div>'+
+  app.innerHTML='<div class="welcome"><img src="banner.png" alt="Calango Digital"><b>Bem-vindo(a)!</b><span>Seus serviços organizados em um só lugar.</span></div>'+
     '<div class="grid">'+MODULES.map(m=>'<button class="tile" data-m="'+m.id+'"><span class="ic">'+m.icone+'</span>'+esc(m.titulo)+'</button>').join('')+
     EM_BREVE.map(x=>'<div class="tile soon"><span class="ic">'+x[0]+'</span>'+x[1]+'<small>em breve</small></div>').join('')+'</div>';
   app.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>MODULES.find(m=>m.id===b.dataset.m).abrir());
