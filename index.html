@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f4fa8">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Calango Digital</title>
+<style>
+:root{--bg:#f3f8ff;--card:#fff;--ink:#0a2350;--mut:#5a6b8c;--pri:#0f4fa8;--sky:#3b9be8;--on:#fff;--line:#d5e3f7;--ok:#1f7a4d;--err:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#0a1730;--card:#12264a;--ink:#eaf2ff;--mut:#9db3d6;--pri:#5aa6f2;--sky:#7cc0ff;--on:#0a1730;--line:#254273;--ok:#6fe0a5;--err:#ff9a92}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+main{max-width:520px;margin:0 auto;padding:14px 14px 40px}
+header{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+header img{width:56px;height:56px;border-radius:14px;background:#fff;object-fit:contain}
+header h1{font-size:1.2rem;margin:0;color:var(--pri)}
+header p{margin:0;color:var(--mut);font-size:.85rem}
+.back{background:none;border:0;color:var(--pri);font:600 1rem system-ui;padding:8px 0;cursor:pointer}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tile{border:0;border-radius:20px;padding:22px 12px;min-height:130px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font:700 1rem system-ui,sans-serif;cursor:pointer;color:#fff;background:linear-gradient(145deg,var(--pri),var(--sky));box-shadow:0 6px 16px rgba(15,79,168,.25)}
+.tile .ic{font-size:2.2rem;line-height:1}
+.tile.off{background:transparent;color:var(--mut);border:2px dashed var(--line);box-shadow:none;cursor:default;font-weight:600}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:12px}
+h2{font-size:1.25rem;margin:4px 0 12px;color:var(--pri)}
+video{width:100%;border-radius:12px;background:#000;display:none;aspect-ratio:4/3;object-fit:cover}
+button.b{border:0;border-radius:14px;padding:15px;font:600 1rem system-ui,sans-serif;cursor:pointer;background:var(--pri);color:var(--on)}
+button.b.alt{background:transparent;color:var(--pri);border:2px solid var(--pri)}
+button.wide{width:100%;margin-top:10px}
+.row{display:flex;gap:8px;align-items:center}
+input[type=text]{flex:1;min-width:0;padding:13px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:1rem}
+#last{min-height:24px;font-weight:600}
+.item{display:flex;align-items:center;gap:10px;padding:12px 0;border-top:1px solid var(--line)}
+.item:first-child{border-top:0}
+.info{flex:1;min-width:0}
+.nm{font-weight:700;overflow-wrap:anywhere}
+.sub{color:var(--mut);font-size:.85rem;overflow-wrap:anywhere}
+.qty{display:flex;align-items:center;gap:6px}
+.qty button{width:42px;height:42px;padding:0;font-size:1.4rem}
+.qty b{min-width:34px;text-align:center;font-size:1.3rem;color:var(--sky)}
+.ed{background:none;border:0;color:var(--pri);padding:2px 0;font-size:.85rem;text-decoration:underline;cursor:pointer}
+.tot{display:flex;justify-content:space-between;font-weight:700;margin-bottom:6px}
+.ok{color:var(--ok)}.err{color:var(--err)}.mut{color:var(--mut)}
+</style>
+</head>
+<body>
+<main>
+<header><img src="logo.png" alt="Calango Digital"><div><h1>Calango Digital</h1><p>Soluções em aplicativos e inovação</p></div></header>
+<div id="app"></div>
+</main>
+
+<script>
+/* ===== Lista de módulos: para incluir um novo botão, adicione um item aqui ===== */
+const MODULES=[
+  {id:'contagem',titulo:'Contagem de estoque',icone:'📦',abrir:abrirContagem}
+  /* exemplo futuro: {id:'vencimentos',titulo:'Vencimentos',icone:'📅',abrir:abrirVencimentos} */
+];
+
+const $=id=>document.getElementById(id);
+const app=$('app');
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const store={get(k,d){try{return JSON.parse(localStorage.getItem('calango:'+k))||d}catch(e){return d}},set(k,v){try{localStorage.setItem('calango:'+k,JSON.stringify(v))}catch(e){}}};
+let limpar=null; // função chamada ao sair de um módulo (ex: parar câmera)
+
+function inicio(){
+  if(limpar){limpar();limpar=null}
+  app.innerHTML='<div class="grid">'+MODULES.map(m=>
+    '<button class="tile" data-m="'+m.id+'"><span class="ic">'+m.icone+'</span>'+esc(m.titulo)+'</button>'
+  ).join('')+'<div class="tile off"><span class="ic">＋</span>Em breve</div></div>';
+  app.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>MODULES.find(m=>m.id===b.dataset.m).abrir());
+}
+function telaModulo(titulo,html){
+  app.innerHTML='<button class="back" id="voltar">‹ Voltar</button><h2>'+esc(titulo)+'</h2>'+html;
+  $('voltar').onclick=inicio;
+}
+
+/* ===== Módulo: contagem por código de barras ===== */
+function abrirContagem(){
+  telaModulo('Contagem de estoque',
+  '<div class="card"><video id="v" playsinline muted></video>'+
+  '<button class="b wide" id="cam" style="margin-top:0">Abrir câmera e contar</button>'+
+  '<div id="last" class="mut" style="margin-top:10px">Cada leitura soma 1 unidade.</div>'+
+  '<div class="row" style="margin-top:8px"><input id="man" type="text" inputmode="numeric" placeholder="Código digitado"><button class="b alt" id="add">Somar</button></div></div>'+
+  '<div class="card"><div class="tot"><span>Itens diferentes: <span id="n">0</span></span><span>Unidades: <span id="u">0</span></span></div>'+
+  '<div id="list"></div>'+
+  '<button class="b wide" id="share">Copiar ou enviar a lista</button>'+
+  '<button class="b alt wide" id="reset">Zerar contagem</button></div>');
+
+  let cat=store.get('catalogo',{}),cnt=store.get('contagem',{});
+  let stream=null,timer=null,det=null,lastCode='',lastAt=0,AC=null;
+  const save=()=>{store.set('catalogo',cat);store.set('contagem',cnt)};
+
+  function beep(){
+    try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();const o=AC.createOscillator(),g=AC.createGain();
+    o.frequency.value=880;g.gain.value=.15;o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+.1)}catch(e){}
+    if(navigator.vibrate)navigator.vibrate(60);
+  }
+  function render(){
+    const codes=Object.keys(cnt).filter(c=>cnt[c]>0).sort((a,b)=>(cat[a]&&cat[a].name||a).localeCompare((cat[b]&&cat[b].name)||b));
+    $('n').textContent=codes.length;
+    $('u').textContent=codes.reduce((s,c)=>s+cnt[c],0);
+    $('list').innerHTML=codes.length?codes.map(c=>{
+      const p=cat[c]||{};
+      return '<div class="item"><div class="info"><div class="nm">'+esc(p.name||'Produto sem nome')+'</div>'+
+      '<div class="sub">'+esc([p.size,c].filter(Boolean).join(' · '))+'</div>'+
+      '<button class="ed" data-e="'+c+'">editar nome e medida</button></div>'+
+      '<div class="qty"><button class="b alt" data-m="'+c+'">−</button><b>'+cnt[c]+'</b><button class="b" data-p="'+c+'">+</button></div></div>';
+    }).join(''):'<span class="mut">Nenhuma leitura ainda.</span>';
+  }
+  async function lookup(c){
+    try{
+      const r=await fetch('https://world.openfoodfacts.org/api/v2/product/'+c+'.json?fields=product_name,quantity');
+      const d=await r.json();
+      if(d.status===1&&d.product&&d.product.product_name){cat[c]={name:d.product.product_name,size:d.product.quantity||''};save();render()}
+    }catch(e){}
+  }
+  function contar(c){
+    c=String(c).replace(/\D/g,'');if(c.length<8)return;
+    cnt[c]=(cnt[c]||0)+1;
+    const novo=!cat[c]||!cat[c].name;
+    if(!cat[c])cat[c]={name:'',size:''};
+    save();render();beep();
+    $('last').innerHTML='<span class="ok">Lido:</span> '+esc(cat[c].name||c)+' (total '+cnt[c]+')';
+    if(novo)lookup(c);
+  }
+  $('list').onclick=e=>{
+    const t=e.target;
+    if(t.dataset.p){cnt[t.dataset.p]++;save();render()}
+    else if(t.dataset.m){cnt[t.dataset.m]=Math.max(0,cnt[t.dataset.m]-1);save();render()}
+    else if(t.dataset.e){
+      const c=t.dataset.e,p=cat[c]||{name:'',size:''};
+      const n=prompt('Nome do produto:',p.name);if(n===null)return;
+      const s=prompt('Medida (ex: 500 g):',p.size);
+      cat[c]={name:n.trim(),size:(s||'').trim()};save();render();
+    }
+  };
+  $('add').onclick=()=>{contar($('man').value);$('man').value=''};
+  $('reset').onclick=()=>{if(confirm('Zerar a contagem? Os nomes dos produtos continuam salvos.')){cnt={};save();render();$('last').textContent='Contagem zerada.'}};
+  $('share').onclick=async()=>{
+    const codes=Object.keys(cnt).filter(c=>cnt[c]>0);if(!codes.length)return;
+    const txt='Contagem de '+new Date().toLocaleDateString('pt-BR')+'\n'+codes.map(c=>{const p=cat[c]||{};return cnt[c]+' x '+(p.name||c)+(p.size?' ('+p.size+')':'')}).join('\n');
+    try{if(navigator.share){await navigator.share({text:txt});return}}catch(e){return}
+    try{await navigator.clipboard.writeText(txt);$('last').innerHTML='<span class="ok">Lista copiada.</span>'}catch(e){prompt('Copie a lista:',txt)}
+  };
+  function parar(){
+    if(timer){clearInterval(timer);timer=null}
+    if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+    const v=$('v'),b=$('cam');if(v)v.style.display='none';if(b)b.textContent='Abrir câmera e contar';
+  }
+  limpar=parar;
+  $('cam').onclick=async()=>{
+    if(stream){parar();return}
+    if(!('BarcodeDetector' in window)){$('last').innerHTML='<span class="err">Este navegador não lê código de barras. Use o Chrome no Android.</span>';return}
+    det=det||new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128']});
+    try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})}
+    catch(e){$('last').innerHTML='<span class="err">A câmera não abriu. Permita o acesso à câmera no navegador e abra pelo link https.</span>';return}
+    const v=$('v');v.srcObject=stream;v.style.display='block';await v.play();
+    $('cam').textContent='Parar câmera';$('last').textContent='Aponte para cada unidade…';
+    timer=setInterval(async()=>{
+      try{
+        const r=await det.detect(v);
+        if(r.length){const c=r[0].rawValue,now=Date.now();
+          if(c!==lastCode||now-lastAt>1500){lastCode=c;lastAt=now;contar(c)}else lastAt=now}
+      }catch(e){}
+    },300);
+  };
+  render();
+}
+
+inicio();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
