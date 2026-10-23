@@ -43,6 +43,11 @@ input[type=text]{flex:1;min-width:0;padding:13px;border-radius:12px;border:1px s
 .ed{background:none;border:0;color:var(--pri);padding:2px 0;font-size:.85rem;text-decoration:underline;cursor:pointer}
 .tot{display:flex;justify-content:space-between;font-weight:700;margin-bottom:6px}
 .ok{color:var(--ok)}.err{color:var(--err)}.mut{color:var(--mut)}
+.dif{font-weight:700;text-align:right;min-width:92px}
+.tb{width:100%;border-collapse:collapse;font-size:.92rem}.tb th,.tb td{padding:8px 4px;border-top:1px solid var(--line);text-align:right}.tb th:first-child,.tb td:first-child{text-align:left;overflow-wrap:anywhere}
+#print{display:none}
+@media print{main{display:none!important}body{background:#fff}#print{display:block;color:#000;padding:12px}#print .tb th,#print .tb td{border-color:#999}}
+label.chk{display:flex;gap:8px;align-items:center;margin:10px 0;color:var(--mut);font-size:.9rem}
 </style>
 </head>
 <body>
@@ -52,53 +57,78 @@ input[type=text]{flex:1;min-width:0;padding:13px;border-radius:12px;border:1px s
 </main>
 
 <script>
-/* ===== Lista de módulos: para incluir um novo botão, adicione um item aqui ===== */
+/* ===== Módulos: para incluir um novo botão na tela inicial, adicione um item aqui ===== */
 const MODULES=[
-  {id:'contagem',titulo:'Contagem de estoque',icone:'📦',abrir:abrirContagem}
-  /* exemplo futuro: {id:'vencimentos',titulo:'Vencimentos',icone:'📅',abrir:abrirVencimentos} */
+  {id:'estoque',titulo:'Estoque',icone:'📦',abrir:()=>abrirEstoque()}
 ];
-
 const $=id=>document.getElementById(id);
 const app=$('app');
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const store={get(k,d){try{return JSON.parse(localStorage.getItem('calango:'+k))||d}catch(e){return d}},set(k,v){try{localStorage.setItem('calango:'+k,JSON.stringify(v))}catch(e){}}};
-let limpar=null; // função chamada ao sair de um módulo (ex: parar câmera)
+let limpar=null;
 
 function inicio(){
   if(limpar){limpar();limpar=null}
-  app.innerHTML='<div class="grid">'+MODULES.map(m=>
-    '<button class="tile" data-m="'+m.id+'"><span class="ic">'+m.icone+'</span>'+esc(m.titulo)+'</button>'
-  ).join('')+'<div class="tile off"><span class="ic">＋</span>Em breve</div></div>';
+  app.innerHTML='<div class="grid">'+MODULES.map(m=>'<button class="tile" data-m="'+m.id+'"><span class="ic">'+m.icone+'</span>'+esc(m.titulo)+'</button>').join('')+'<div class="tile off"><span class="ic">＋</span>Em breve</div></div>';
   app.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>MODULES.find(m=>m.id===b.dataset.m).abrir());
 }
-function telaModulo(titulo,html){
-  app.innerHTML='<button class="back" id="voltar">‹ Voltar</button><h2>'+esc(titulo)+'</h2>'+html;
-  $('voltar').onclick=inicio;
+function telaModulo(t,html,volta){
+  if(limpar){limpar();limpar=null}
+  app.innerHTML='<button class="back" id="voltar">‹ Voltar</button><h2>'+esc(t)+'</h2>'+html;
+  $('voltar').onclick=volta||inicio;
+}
+function menu(t,tiles,volta){
+  telaModulo(t,'<div class="grid">'+tiles.map((x,i)=>'<button class="tile" data-i="'+i+'"><span class="ic">'+x.ic+'</span>'+esc(x.t)+'</button>').join('')+'</div>',volta);
+  app.querySelectorAll('[data-i]').forEach(b=>b.onclick=tiles[b.dataset.i].f);
 }
 
-/* ===== Módulo: contagem por código de barras ===== */
+/* ===== Ligação com a planilha (Google Sheets via Apps Script) ===== */
+const URL_PADRAO='https://script.google.com/macros/s/AKfycbz4fD7qep9_cmuIxykk4-bqWJtVVo7zBZPkWI8Tq3t_Q836YiPF7AsJLofPWBb3F1_s/exec';
+function cfg(forcar){
+  let c=store.get('planilha',{url:'',token:''});
+  c.url=URL_PADRAO;
+  if(forcar||!c.token){
+    const t=prompt('Senha da planilha (a mesma que você definiu no script):',c.token);if(t===null)return null;
+    c.token=t.trim();store.set('planilha',c);
+  }
+  return c;
+}
+async function apiGet(p){const c=cfg();if(!c)throw new Error('config');
+  const r=await fetch(c.url+'?'+new URLSearchParams({token:c.token,...p}));return r.json()}
+async function apiPost(b){const c=cfg();if(!c)throw new Error('config');
+  const r=await fetch(c.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({token:c.token,...b})});return r.json()}
+async function compartilhar(txt){
+  try{if(navigator.share){await navigator.share({text:txt});return}}catch(e){return}
+  try{await navigator.clipboard.writeText(txt);alert('Copiado.')}catch(e){prompt('Copie:',txt)}
+}
+
+/* ===== Contagem de estoque ===== */
 function abrirContagem(){
-  telaModulo('Contagem de estoque',
+  telaModulo('Contagem',
   '<div class="card"><video id="v" playsinline muted></video>'+
   '<button class="b wide" id="cam" style="margin-top:0">Abrir câmera e contar</button>'+
   '<div id="last" class="mut" style="margin-top:10px">Cada leitura soma 1 unidade.</div>'+
   '<div class="row" style="margin-top:8px"><input id="man" type="text" inputmode="numeric" placeholder="Código digitado"><button class="b alt" id="add">Somar</button></div></div>'+
   '<div class="card"><div class="tot"><span>Itens diferentes: <span id="n">0</span></span><span>Unidades: <span id="u">0</span></span></div>'+
   '<div id="list"></div>'+
-  '<button class="b wide" id="share">Copiar ou enviar a lista</button>'+
-  '<button class="b alt wide" id="reset">Zerar contagem</button></div>');
+  '<button class="b wide" id="fim">Finalizar e comparar com o estoque</button>'+
+  '<button class="b alt wide" id="reset">Zerar contagem atual</button>'+
+  '<button class="ed" id="cfgb" style="margin-top:10px">alterar senha da planilha</button></div>'+
+  '<div id="cmp"></div>',abrirEstoque);
 
   let cat=store.get('catalogo',{}),cnt=store.get('contagem',{});
   let stream=null,timer=null,det=null,lastCode='',lastAt=0,AC=null;
   const save=()=>{store.set('catalogo',cat);store.set('contagem',cnt)};
+  const msg=h=>{$('last').innerHTML=h};
 
   function beep(){
     try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();const o=AC.createOscillator(),g=AC.createGain();
     o.frequency.value=880;g.gain.value=.15;o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+.1)}catch(e){}
     if(navigator.vibrate)navigator.vibrate(60);
   }
+  const nome=c=>(cat[c]&&cat[c].name)||c;
   function render(){
-    const codes=Object.keys(cnt).filter(c=>cnt[c]>0).sort((a,b)=>(cat[a]&&cat[a].name||a).localeCompare((cat[b]&&cat[b].name)||b));
+    const codes=Object.keys(cnt).filter(c=>cnt[c]>0).sort((a,b)=>nome(a).localeCompare(nome(b)));
     $('n').textContent=codes.length;
     $('u').textContent=codes.reduce((s,c)=>s+cnt[c],0);
     $('list').innerHTML=codes.length?codes.map(c=>{
@@ -122,7 +152,7 @@ function abrirContagem(){
     const novo=!cat[c]||!cat[c].name;
     if(!cat[c])cat[c]={name:'',size:''};
     save();render();beep();
-    $('last').innerHTML='<span class="ok">Lido:</span> '+esc(cat[c].name||c)+' (total '+cnt[c]+')';
+    msg('<span class="ok">Lido:</span> '+esc(nome(c))+' (total '+cnt[c]+')');
     if(novo)lookup(c);
   }
   $('list').onclick=e=>{
@@ -137,13 +167,45 @@ function abrirContagem(){
     }
   };
   $('add').onclick=()=>{contar($('man').value);$('man').value=''};
-  $('reset').onclick=()=>{if(confirm('Zerar a contagem? Os nomes dos produtos continuam salvos.')){cnt={};save();render();$('last').textContent='Contagem zerada.'}};
-  $('share').onclick=async()=>{
-    const codes=Object.keys(cnt).filter(c=>cnt[c]>0);if(!codes.length)return;
-    const txt='Contagem de '+new Date().toLocaleDateString('pt-BR')+'\n'+codes.map(c=>{const p=cat[c]||{};return cnt[c]+' x '+(p.name||c)+(p.size?' ('+p.size+')':'')}).join('\n');
-    try{if(navigator.share){await navigator.share({text:txt});return}}catch(e){return}
-    try{await navigator.clipboard.writeText(txt);$('last').innerHTML='<span class="ok">Lista copiada.</span>'}catch(e){prompt('Copie a lista:',txt)}
+  $('reset').onclick=()=>{if(confirm('Zerar a contagem atual? O estoque salvo na planilha não muda.')){cnt={};save();render();$('cmp').innerHTML='';msg('Contagem zerada.')}};
+  $('cfgb').onclick=()=>{if(cfg(true))msg('<span class="ok">Planilha configurada.</span>')};
+
+  $('fim').onclick=async()=>{
+    if(!Object.keys(cnt).length){msg('Nenhum item lido.');return}
+    msg('Buscando o estoque anterior…');
+    let saldo;
+    try{
+      const d=await apiGet({action:'saldo'});
+      if(!d.ok){msg('<span class="err">A planilha recusou: '+esc(d.erro||'erro')+'. Confira a senha.</span>');return}
+      saldo=d.itens;
+    }catch(e){msg('<span class="err">Não consegui falar com a planilha. Confira a internet e a configuração. A contagem continua salva.</span>');return}
+    comparar(saldo);
   };
+
+  function comparar(saldo){
+    const inicial=Object.keys(saldo).length===0;
+    const codes=Object.keys(cnt).filter(c=>cnt[c]>0||saldo[c]).sort((a,b)=>nome(a).localeCompare(nome(b)));
+    const rows=codes.map(c=>{const antes=saldo[c]?saldo[c].qtd:0;return{c,antes,agora:cnt[c]||0,dif:(cnt[c]||0)-antes}});
+    const nl=Object.keys(saldo).filter(c=>cnt[c]===undefined&&saldo[c].qtd>0);
+    let ent=0,sai=0;rows.forEach(r=>{if(r.dif>0)ent+=r.dif;else sai-=r.dif});
+    const lab=r=>inicial?'<span class="mut">estoque inicial</span>':r.dif===0?'<span class="mut">igual</span>':r.dif>0?'<span class="ok">+'+r.dif+' entrou</span>':'<span class="err">'+r.dif+' saiu</span>'.replace('-','−');
+    $('cmp').innerHTML='<div class="card"><h2 style="margin-top:0">'+(inicial?'Primeira contagem':'Comparação com o estoque anterior')+'</h2>'+
+      (inicial?'<p class="mut">Ainda não há estoque na planilha. Esta contagem será salva como estoque inicial.</p>':'<div class="tot"><span class="ok">Entrou: '+ent+'</span><span class="err">Saiu: '+sai+'</span></div>')+
+      rows.filter(r=>r.agora>0||r.antes>0).map(r=>'<div class="item"><div class="info"><div class="nm">'+esc(nome(r.c))+'</div><div class="sub">'+esc((cat[r.c]&&cat[r.c].size)||'')+(inicial?'':' antes '+r.antes+' · agora '+r.agora)+'</div></div><div class="dif">'+(inicial?r.agora+' un.':lab(r))+'</div></div>').join('')+
+      (nl.length?'<div class="sub" style="margin-top:10px"><b>Não lidos nesta contagem:</b> '+nl.map(c=>esc(nome(c))+' ('+saldo[c].qtd+')').join(', ')+'</div><label class="chk"><input type="checkbox" id="zn"> Considerar os não lidos como zerados (saíram)</label>':'')+
+      '<button class="b wide" id="conf">Confirmar e salvar na planilha</button></div>';
+    $('conf').onclick=async()=>{
+      $('conf').disabled=true;$('conf').textContent='Salvando…';
+      const itens=rows.filter(r=>cnt[r.c]!==undefined).map(r=>({codigo:r.c,nome:(cat[r.c]&&cat[r.c].name)||'',medida:(cat[r.c]&&cat[r.c].size)||'',qtd:r.agora}));
+      try{
+        const d=await apiPost({acao:'salvar',itens,zerarNaoLidos:!!($('zn')&&$('zn').checked)});
+        if(d.ok){cnt={};save();render();$('cmp').innerHTML='';msg('<span class="ok">Salvo na planilha.</span> '+(d.inicial?'Estoque inicial registrado.':d.mov+' movimentações registradas.'))}
+        else{msg('<span class="err">A planilha recusou: '+esc(d.erro||'erro')+'</span>');$('conf').disabled=false;$('conf').textContent='Confirmar e salvar na planilha'}
+      }catch(e){msg('<span class="err">Não consegui salvar. A contagem continua aqui, tente de novo.</span>');$('conf').disabled=false;$('conf').textContent='Confirmar e salvar na planilha'}
+    };
+    $('cmp').scrollIntoView({behavior:'smooth'});
+  }
+
   function parar(){
     if(timer){clearInterval(timer);timer=null}
     if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
@@ -152,21 +214,128 @@ function abrirContagem(){
   limpar=parar;
   $('cam').onclick=async()=>{
     if(stream){parar();return}
-    if(!('BarcodeDetector' in window)){$('last').innerHTML='<span class="err">Este navegador não lê código de barras. Use o Chrome no Android.</span>';return}
+    if(!('BarcodeDetector' in window)){msg('<span class="err">Este navegador não lê código de barras. Use o Chrome no Android.</span>');return}
     det=det||new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128']});
     try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})}
-    catch(e){$('last').innerHTML='<span class="err">A câmera não abriu. Permita o acesso à câmera no navegador e abra pelo link https.</span>';return}
+    catch(e){msg('<span class="err">A câmera não abriu. Permita o acesso à câmera no navegador e abra pelo link https.</span>');return}
     const v=$('v');v.srcObject=stream;v.style.display='block';await v.play();
-    $('cam').textContent='Parar câmera';$('last').textContent='Aponte para cada unidade…';
+    $('cam').textContent='Parar câmera';msg('Aponte para cada unidade…');
     timer=setInterval(async()=>{
-      try{
-        const r=await det.detect(v);
+      try{const r=await det.detect(v);
         if(r.length){const c=r[0].rawValue,now=Date.now();
           if(c!==lastCode||now-lastAt>1500){lastCode=c;lastAt=now;contar(c)}else lastAt=now}
       }catch(e){}
     },300);
   };
   render();
+}
+
+/* ===== Menu do Estoque ===== */
+function abrirEstoque(){
+  menu('Estoque',[
+    {ic:'📷',t:'Contagem',f:abrirContagem},
+    {ic:'📊',t:'Relatório',f:()=>menuPeriodo('Relatório',verRelatorio,abrirEstoque)},
+    {ic:'⬇️',t:'Baixar relatório',f:()=>menuPeriodo('Baixar relatório',baixarRelatorio,abrirEstoque)},
+    {ic:'📋',t:'Saldo atual',f:abrirSaldo},
+    {ic:'🔄',t:'Movimentações',f:abrirMov},
+    {ic:'⚙️',t:'Configurações',f:abrirConfig}
+  ],inicio);
+}
+function menuPeriodo(t,fn,volta){
+  const f=p=>()=>fn(p,()=>menuPeriodo(t,fn,volta));
+  menu(t,[{ic:'📅',t:'Semanal',f:f('semana')},{ic:'🗓️',t:'Mensal',f:f('mes')},{ic:'📆',t:'Anual',f:f('ano')}],volta);
+}
+
+const NOMEP={semana:'semanal',mes:'mensal',ano:'anual'};
+const isoD=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const brD=s=>String(s).split('-').reverse().join('/');
+const msgErro=e=>e.message==='config'?'Digite a senha da planilha em Estoque, Configurações.':'Não consegui falar com a planilha ('+esc(e.message)+'). Confira a internet e a configuração.';
+function periodo(p){
+  const h=new Date();let d;
+  if(p==='semana'){d=new Date(h);d.setDate(h.getDate()-((h.getDay()+6)%7))}
+  else if(p==='mes')d=new Date(h.getFullYear(),h.getMonth(),1);
+  else d=new Date(h.getFullYear(),0,1);
+  return{de:isoD(d),ate:isoD(h)};
+}
+async function buscarRel(p){
+  const q=periodo(p),r=await apiGet({action:'relatorio',de:q.de,ate:q.ate});
+  if(!r.ok)throw new Error(r.erro||'erro');
+  const ks=Object.keys(r.itens).sort((a,b)=>(r.itens[a].nome||a).localeCompare(r.itens[b].nome||b));
+  const lin=ks.map(k=>{const i=r.itens[k];return{cod:k,nome:i.nome||k,medida:i.medida||'',e:i.entrou,s:i.saiu,sd:i.saldo}});
+  return{de:q.de,ate:q.ate,lin,te:lin.reduce((a,l)=>a+l.e,0),ts:lin.reduce((a,l)=>a+l.s,0)};
+}
+const tabelaRel=R=>'<div class="tot"><span class="ok">Entrou: '+R.te+'</span><span class="err">Saiu: '+R.ts+'</span></div>'+
+  '<table class="tb"><tr><th>Produto</th><th>Entrou</th><th>Saiu</th><th>Saldo</th></tr>'+
+  R.lin.map(l=>'<tr><td>'+esc(l.nome+(l.medida?' ('+l.medida+')':''))+'</td><td>'+l.e+'</td><td>'+l.s+'</td><td>'+l.sd+'</td></tr>').join('')+'</table>';
+
+async function verRelatorio(p,volta){
+  telaModulo('Relatório '+NOMEP[p],'<div class="card" id="rel">Buscando…</div>',volta);
+  try{
+    const R=await buscarRel(p);
+    if(!R.lin.length){$('rel').innerHTML='Sem movimentações de '+brD(R.de)+' a '+brD(R.ate)+'.';return}
+    $('rel').innerHTML='<div class="sub" style="margin-bottom:8px">'+brD(R.de)+' a '+brD(R.ate)+'</div>'+tabelaRel(R)+'<button class="b wide" id="cp">Copiar ou enviar</button>';
+    $('cp').onclick=()=>compartilhar('Relatório '+NOMEP[p]+' de estoque, '+brD(R.de)+' a '+brD(R.ate)+'\nEntrou: '+R.te+' | Saiu: '+R.ts+'\n'+R.lin.map(l=>l.nome+': entrou '+l.e+', saiu '+l.s+', saldo '+l.sd).join('\n'));
+  }catch(e){$('rel').innerHTML='<span class="err">'+msgErro(e)+'</span>'}
+}
+
+async function baixarRelatorio(p,volta){
+  telaModulo('Baixar relatório '+NOMEP[p],'<div class="card" id="rel">Buscando…</div>',volta);
+  try{
+    const R=await buscarRel(p);
+    if(!R.lin.length){$('rel').innerHTML='Sem movimentações de '+brD(R.de)+' a '+brD(R.ate)+'.';return}
+    $('rel').innerHTML='<div class="sub">'+brD(R.de)+' a '+brD(R.ate)+' · '+R.lin.length+' produtos</div>'+
+      '<button class="b wide" id="csv">Baixar planilha (CSV, abre no Excel)</button><button class="b alt wide" id="pdf">Salvar em PDF</button>';
+    $('csv').onclick=()=>{
+      const q=v=>'"'+String(v).replace(/"/g,'""')+'"';
+      const L=[['Relatório '+NOMEP[p]+' de estoque',brD(R.de)+' a '+brD(R.ate)],[],['Código','Produto','Medida','Entrou','Saiu','Saldo']]
+        .concat(R.lin.map(l=>['="'+l.cod+'"',l.nome,l.medida,l.e,l.s,l.sd])).concat([[],['Total','','',R.te,R.ts,'']]);
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(new Blob(['\ufeff'+L.map(r=>r.map(q).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'}));
+      a.download='relatorio-estoque-'+NOMEP[p]+'-'+R.ate+'.csv';document.body.appendChild(a);a.click();a.remove();
+    };
+    $('pdf').onclick=()=>{
+      const d=document.createElement('div');d.id='print';
+      d.innerHTML='<h2>Relatório '+NOMEP[p]+' de estoque</h2><p>'+brD(R.de)+' a '+brD(R.ate)+'</p>'+tabelaRel(R);
+      document.body.appendChild(d);window.print();setTimeout(()=>d.remove(),1500);
+    };
+  }catch(e){$('rel').innerHTML='<span class="err">'+msgErro(e)+'</span>'}
+}
+
+async function abrirSaldo(){
+  telaModulo('Saldo atual','<div class="card" id="sd">Buscando…</div>',abrirEstoque);
+  try{
+    const d=await apiGet({action:'saldo'});
+    if(!d.ok)throw new Error(d.erro||'erro');
+    const ks=Object.keys(d.itens).filter(k=>d.itens[k].qtd>0).sort((a,b)=>(d.itens[a].nome||a).localeCompare(d.itens[b].nome||b));
+    if(!ks.length){$('sd').textContent='Ainda não há estoque salvo. Faça a primeira contagem.';return}
+    $('sd').innerHTML='<div class="tot"><span>Produtos: '+ks.length+'</span><span>Unidades: '+ks.reduce((s,k)=>s+d.itens[k].qtd,0)+'</span></div>'+
+      ks.map(k=>{const i=d.itens[k];return'<div class="item"><div class="info"><div class="nm">'+esc(i.nome||k)+'</div><div class="sub">'+esc(i.medida||'')+'</div></div><div class="qty"><b>'+i.qtd+'</b></div></div>'}).join('');
+  }catch(e){$('sd').innerHTML='<span class="err">'+msgErro(e)+'</span>'}
+}
+
+async function abrirMov(){
+  telaModulo('Movimentações','<div class="card" id="mv">Buscando…</div>',abrirEstoque);
+  try{
+    const d=await apiGet({action:'movimentos'});
+    if(!d.ok)throw new Error(d.erro==='ação'?'atualize o script da planilha':(d.erro||'erro'));
+    if(!d.itens.length){$('mv').textContent='Nenhuma movimentação ainda.';return}
+    $('mv').innerHTML='<div class="sub" style="margin-bottom:6px">Últimas '+d.itens.length+' movimentações</div>'+d.itens.map(i=>{
+      const t=i.tipo==='Inicial'?'<span class="mut">inicial '+i.depois+'</span>':i.dif>0?'<span class="ok">+'+i.dif+' entrou</span>':'<span class="err">'+i.dif+' saiu</span>';
+      return'<div class="item"><div class="info"><div class="nm">'+esc(i.nome||i.codigo)+'</div><div class="sub">'+esc(String(i.data)+' '+String(i.hora))+'</div></div><div class="dif">'+t+'</div></div>'}).join('');
+  }catch(e){$('mv').innerHTML='<span class="err">'+msgErro(e)+'</span>'}
+}
+
+function abrirConfig(){
+  const c=store.get('planilha',{url:''});
+  telaModulo('Configurações','<div class="card"><div class="sub">Planilha (endereço já incluído no app)</div><div class="nm" id="st">'+(c.token?'Senha salva neste celular':'Falta a senha (toque em Alterar senha)')+'</div>'+
+    '<button class="b wide" id="alt">Alterar senha</button><button class="b alt wide" id="tst">Testar conexão</button><div id="rs" style="margin-top:10px;font-weight:600"></div></div>',abrirEstoque);
+  $('alt').onclick=()=>{const n=cfg(true);if(n)$('st').textContent='Senha salva neste celular'};
+  $('tst').onclick=async()=>{
+    $('rs').textContent='Testando…';
+    try{const d=await apiGet({action:'saldo'});
+      $('rs').innerHTML=d.ok?'<span class="ok">Conectado. '+Object.keys(d.itens).length+' produtos no estoque.</span>':'<span class="err">A planilha recusou: '+esc(d.erro||'erro')+'. Confira a senha.</span>'}
+    catch(e){$('rs').innerHTML='<span class="err">'+msgErro(e)+'</span>'}
+  };
 }
 
 inicio();
