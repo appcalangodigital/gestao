@@ -61,8 +61,8 @@ label.chk{display:flex;gap:8px;align-items:center;margin:10px 0;color:var(--mut)
 .dlg .dsub{font-weight:700;color:var(--mut);margin-bottom:12px;overflow-wrap:anywhere}
 .dlg p{margin:6px 0 12px;color:var(--mut);font-size:.95rem}
 .dlg label.fl{display:block;font-size:.8rem;font-weight:700;color:var(--mut);margin:12px 0 0}
-.dlg input{display:block;width:100%;margin-top:5px;padding:13px 14px;border:1.5px solid var(--line);border-radius:14px;background:#f6f9ff;color:var(--ink);font:600 1rem system-ui,sans-serif;outline:none}
-.dlg input:focus{border-color:var(--pri);background:#fff}
+.dlg input,.dlg select,.dlg textarea{display:block;width:100%;margin-top:5px;padding:13px 14px;border:1.5px solid var(--line);border-radius:14px;background:#f6f9ff;color:var(--ink);font:600 1rem system-ui,sans-serif;outline:none}
+.dlg input:focus,.dlg select:focus,.dlg textarea:focus{border-color:var(--pri);background:#fff}
 .dlg .qs{display:flex;gap:10px;align-items:center;margin-top:6px}
 .dlg .qs input{margin:0;text-align:center;font-size:1.6rem;font-weight:800;color:var(--pri);padding:10px 6px}
 .dlg .qs button{flex:0 0 52px;height:52px;padding:0;font-size:1.6rem;border-radius:16px}
@@ -72,6 +72,30 @@ label.chk{display:flex;gap:8px;align-items:center;margin:10px 0;color:var(--mut)
 .dbt button{flex:1;padding:14px 8px;border-radius:14px}
 .dbt button.b:not(.alt){background:linear-gradient(145deg,#0e2a60,#1760c4)}
 .toast{position:fixed;left:50%;bottom:calc(28px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:60;background:#0e2a60;color:#fff;padding:12px 20px;border-radius:999px;font:600 .95rem system-ui,sans-serif;box-shadow:0 8px 24px rgba(10,35,80,.3);max-width:88%;text-align:center}
+.dlg{max-height:88vh;overflow-y:auto}
+.dlg textarea{resize:none}
+.dlg select{appearance:auto}
+.r2{display:flex;gap:10px}.r2>*{flex:1;min-width:0}
+.dlg .r2 input,.dlg .r2 select{font-size:.88rem;padding:13px 8px}
+.dlg input[type=date],.dlg input[type=time]{min-width:0}
+.acs{display:flex;gap:10px;margin-top:16px}.acs button{flex:1;padding:12px 6px;border-radius:14px}
+.pc{display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:18px;padding:14px 14px 14px 16px;margin-bottom:12px;box-shadow:0 3px 10px rgba(10,35,80,.07);cursor:pointer;color:var(--ink);font-family:inherit}
+.pc .pn{font-weight:800;font-size:1.05rem;color:#0a2f7a}.pc .ps{color:var(--mut);font-size:.88rem}.pc .pm{margin-top:6px;font-size:.92rem}
+.wk{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin-bottom:12px}
+.wd{border:1px solid var(--line);background:#fff;border-radius:14px;padding:6px 0;display:flex;flex-direction:column;align-items:center;gap:1px;color:var(--ink);font-family:inherit;cursor:pointer;min-width:0}
+.wd small{font-size:.68rem;color:var(--mut)}.wd b{font-size:1rem}.wd i{font-style:normal;font-size:.68rem;font-weight:700;color:var(--pri);min-height:.95em}
+.wd.on{background:linear-gradient(145deg,#0e2a60,#1760c4);border-color:transparent;color:#fff}.wd.on small,.wd.on i{color:#cfe3ff}
+.wd.td:not(.on){border-color:var(--pri)}
+.dn{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.dn .dt{flex:1;text-align:center;font-weight:800;color:#0a2f7a}
+.nv{width:44px;height:44px;flex:0 0 44px;border-radius:14px;border:0;background:#eaf1fc;color:var(--pri);font-size:1.5rem;cursor:pointer}
+.ap{display:flex;gap:12px;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:16px;padding:12px;margin-bottom:10px;cursor:pointer;color:var(--ink);font-family:inherit;box-shadow:0 2px 8px rgba(10,35,80,.06)}
+.ap .ah{display:flex;flex-direction:column;align-items:center;min-width:52px}.ap .ah b{font-size:1.05rem;color:#0a2f7a}.ap .ah span{font-size:.75rem;color:var(--mut)}
+.ap .ai{flex:1;min-width:0}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.ch{display:inline-block;font-size:.72rem;font-weight:700;color:#fff;padding:3px 9px;border-radius:999px}
+.ch.pg{background:#1f7a4d}.ch.pd{background:#e07b1a}
+.rw{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:.95rem}
 </style>
 </head>
 <body>
@@ -82,7 +106,8 @@ label.chk{display:flex;gap:8px;align-items:center;margin:10px 0;color:var(--mut)
 <script>
 /* ===== Módulos: para incluir um novo botão na tela inicial, adicione um item aqui ===== */
 const MODULES=[
-  {id:'estoque',titulo:'Estoque',icone:'📦',abrir:()=>abrirEstoque()}
+  {id:'estoque',titulo:'Estoque',icone:'📦',abrir:()=>abrirEstoque()},
+  {id:'agendas',titulo:'Agendas',icone:'🗓️',abrir:()=>abrirAgendas()}
 ];
 const $=id=>document.getElementById(id);
 const app=$('app');
@@ -128,6 +153,8 @@ function caixa(o){return new Promise(res=>{
   const fim=v=>{ov.remove();res(v)};
   const ler=()=>{const r={};ov.querySelectorAll('[data-f]').forEach(i=>r[i.dataset.f]=i.value);return r};
   ov.onclick=e=>{
+    const ac=e.target.closest('[data-a]');
+    if(ac&&o.acao){o.acao(ac.dataset.a,ler,fim);return}
     const st=e.target.closest('[data-st]');
     if(st){const i=ov.querySelector('[data-f="qtd"]');i.value=String(Math.max(0,Math.round(((Number(String(i.value).replace(',','.'))||0)+Number(st.dataset.st))*1000)/1000)).replace('.',',');return}
     const x=e.target.closest('[data-x]');
@@ -136,9 +163,9 @@ function caixa(o){return new Promise(res=>{
   };
   ov.onkeydown=e=>{
     if(e.key==='Escape'&&!o.semCancelar)fim(null);
-    if(e.key==='Enter'&&e.target.tagName==='INPUT'){e.preventDefault();fim(ler())}
+    if(e.key==='Enter'&&e.target.tagName==='INPUT'&&!o.semEnter){e.preventDefault();fim(ler())}
   };
-  const f=ov.querySelector('[data-f]');if(f){f.focus();if(f.select)f.select()}
+  const f=ov.querySelector('[data-f]');if(f&&!o.semFoco){f.focus();if(f.select)f.select()}
 })}
 const confirmar=(titulo,texto,ok)=>caixa({titulo,texto,ok:ok||'Confirmar'});
 const avisar=(titulo,texto)=>caixa({titulo,texto,ok:'OK',semCancelar:true});
@@ -290,6 +317,241 @@ function abrirContagem(){
     },300);
   };
   render();
+}
+
+/* ===== Agendas dos profissionais ===== */
+const AG_CORES={Azul:'#1760c4',Verde:'#1f9d6b',Roxo:'#7c4dcc',Laranja:'#e07b1a',Rosa:'#d6457f',Turquesa:'#0f9ab0'};
+const AG_STATUS={agendada:['Agendada','#5a6b8c'],confirmada:['Confirmada','#1760c4'],compareceu:['Atendida','#1f7a4d'],faltou:['Faltou','#b3261e'],cancelada:['Cancelada','#8a8f99']};
+const AG_TIPOS={particular:'Particular',convenio:'Convênio',cortesia:'Cortesia (divulgação)'};
+const AG_DIAS=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+const ag={
+  get(){const d=store.get('agendas',{profs:[],cons:[]});d.profs=d.profs||[];d.cons=d.cons||[];return d},
+  set(d){store.set('agendas',d)}
+};
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const hojeIso=()=>isoD(new Date());
+const dIso=s=>{const a=s.split('-').map(Number);return new Date(a[0],a[1]-1,a[2])};
+const somaDias=(s,n)=>{const d=dIso(s);d.setDate(d.getDate()+n);return isoD(d)};
+const toMin=h=>{const a=String(h).split(':').map(Number);return (a[0]||0)*60+(a[1]||0)};
+const hm=m=>String(Math.floor(m/60)%24).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+const brl=v=>'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const dataLonga=s=>{const d=dIso(s);return AG_DIAS[d.getDay()]+', '+String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')};
+const refazer=f=>{porVoltar=true;try{f()}finally{porVoltar=false}};
+const ativa=c=>c.status!=='cancelada';
+const valorCons=c=>c.tipo==='cortesia'?0:(Number(c.valor)||0);
+const plural=(n,a,b)=>n+' '+(n===1?a:b);
+const selecao=(id,rot,ops,val)=>'<label class="fl">'+esc(rot)+'<select data-f="'+id+'">'+ops.map(o=>'<option value="'+esc(o[0])+'"'+(String(o[0])===String(val)?' selected':'')+'>'+esc(o[1])+'</option>').join('')+'</select></label>';
+const numBr=s=>Number(String(s==null?'':s).replace(',','.'))||0;
+
+function zap(c,p){
+  let n=String(c.tel||'').replace(/\D/g,'');
+  if(n.length<10)return false;
+  if(n.length<=11)n='55'+n;
+  const nome=String(c.pac||'').trim().split(' ')[0];
+  const t='Olá'+(nome?', '+nome:'')+'! Estou confirmando sua consulta com '+p.nome+' no dia '+brD(c.data)+' às '+c.hora+'. Podemos confirmar?';
+  window.open('https://wa.me/'+n+'?text='+encodeURIComponent(t),'_blank');
+  return true;
+}
+
+/* ---- tela das agendas ---- */
+function abrirAgendas(){
+  try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
+  const d=ag.get(),h=hojeIso();
+  const totalHoje=d.cons.filter(c=>c.data===h&&ativa(c)).length;
+  const cards=d.profs.map(p=>{
+    const l=d.cons.filter(c=>c.prof===p.id&&c.data===h&&ativa(c));
+    const conf=l.filter(c=>c.status==='agendada').length;
+    return '<button class="pc" data-p="'+p.id+'" style="border-left:6px solid '+p.cor+'"><div class="pn">'+esc(p.nome)+'</div><div class="ps">'+esc(p.esp||'')+'</div>'+
+      '<div class="pm">Hoje: <b>'+plural(l.length,'consulta','consultas')+'</b>'+(conf?' · <span class="err">'+conf+' a confirmar</span>':'')+'</div></button>';
+  }).join('');
+  telaModulo('Agendas',
+    '<div class="card"><div class="tot"><span>Hoje, '+dataLonga(h)+'</span><span>'+plural(totalHoje,'consulta','consultas')+'</span></div><button class="b wide" id="agh" style="margin-top:4px">Ver hoje (todos)</button></div>'+
+    (cards||'<div class="card mut">Nenhuma agenda ainda. Toque em “Nova agenda” para criar a do primeiro profissional.</div>')+
+    '<button class="b alt wide" id="agn">+ Nova agenda</button>'+
+    '<div class="grid" style="margin-top:16px"><button class="tile" id="agr"><span class="ic">💰</span>Resumo financeiro</button><button class="tile" id="agb"><span class="ic">💾</span>Backup e exportar</button></div>',inicio);
+  app.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>abrirDia(b.dataset.p,hojeIso()));
+  $('agh').onclick=()=>abrirDia(null,hojeIso());
+  $('agn').onclick=async()=>{const p=await formProf(null);if(p)refazer(abrirAgendas)};
+  $('agr').onclick=menuResumoAg;
+  $('agb').onclick=abrirBackupAg;
+}
+
+/* ---- dia (de um profissional ou de todos) ---- */
+function abrirDia(pid,data){
+  const d=ag.get(),p=pid?d.profs.find(x=>x.id===pid):null;
+  if(pid&&!p){refazer(abrirAgendas);return}
+  const filtra=c=>!pid||c.prof===pid;
+  const lista=d.cons.filter(c=>filtra(c)&&c.data===data).sort((a,b)=>a.hora.localeCompare(b.hora));
+  const seg=somaDias(data,-((dIso(data).getDay()+6)%7)),h=hojeIso();
+  const sem=[0,1,2,3,4,5,6].map(i=>{
+    const s=somaDias(seg,i),n=d.cons.filter(c=>filtra(c)&&c.data===s&&ativa(c)).length;
+    return '<button class="wd'+(s===data?' on':'')+(s===h?' td':'')+'" data-d="'+s+'"><small>'+AG_DIAS[dIso(s).getDay()]+'</small><b>'+dIso(s).getDate()+'</b><i>'+(n||'')+'</i></button>';
+  }).join('');
+  const itens=lista.map(c=>{
+    const pr=d.profs.find(x=>x.id===c.prof)||{nome:'?',cor:'#999'},st=AG_STATUS[c.status]||AG_STATUS.agendada;
+    const pagoChip=c.tipo==='cortesia'?'':c.pago?'<span class="ch pg">Pago</span>':(c.status==='compareceu'&&valorCons(c)>0?'<span class="ch pd">A receber</span>':'');
+    const tipo=AG_TIPOS[c.tipo]?AG_TIPOS[c.tipo].replace(' (divulgação)',''):'';
+    return '<button class="ap" data-c="'+c.id+'" style="border-left:6px solid '+pr.cor+'"><div class="ah"><b>'+esc(c.hora)+'</b><span>'+hm(toMin(c.hora)+(+c.dur||0))+'</span></div>'+
+      '<div class="ai"><div class="nm">'+esc(c.pac||'Sem nome')+'</div><div class="sub">'+(p?'':esc(pr.nome)+' · ')+esc(tipo)+(c.tipo==='particular'&&valorCons(c)?' · '+brl(valorCons(c)):'')+'</div>'+
+      '<div class="chips"><span class="ch" style="background:'+st[1]+'">'+st[0]+'</span>'+pagoChip+'</div></div></button>';
+  }).join('');
+  const ativas=lista.filter(ativa).length;
+  telaModulo(p?p.nome:'Agenda geral',
+    (p?'<div class="sub" style="margin:-8px 0 12px">'+esc(p.esp||'')+' · consulta de '+p.dur+' min'+(p.valor?' · '+brl(p.valor):'')+'</div>':'')+
+    '<div class="wk">'+sem+'</div>'+
+    '<div class="dn"><button class="nv" id="dp">‹</button><div class="dt">'+dataLonga(data)+(data===h?' · hoje':'')+'<div class="sub" style="font-weight:600">'+plural(ativas,'consulta','consultas')+'</div></div><button class="nv" id="dx">›</button></div>'+
+    '<div class="row" style="margin-bottom:12px"><button class="b alt" id="dh" style="flex:1;padding:11px">Hoje</button><button class="b alt" id="dg" style="flex:1;padding:11px">Ir para data</button></div>'+
+    (itens||'<div class="card mut">Nenhuma consulta neste dia.</div>')+
+    (p?'<button class="b wide" id="nc">+ Nova consulta</button><button class="ed" id="ea" style="margin-top:12px">editar dados desta agenda</button>':''),
+    ()=>refazer(abrirAgendas));
+  const ir=s=>refazer(()=>abrirDia(pid,s));
+  app.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>ir(b.dataset.d));
+  $('dp').onclick=()=>ir(somaDias(data,-1));
+  $('dx').onclick=()=>ir(somaDias(data,1));
+  $('dh').onclick=()=>ir(hojeIso());
+  $('dg').onclick=async()=>{const r=await caixa({titulo:'Ir para data',html:campo('d','Data',data,'date'),ok:'Ir'});if(r&&r.d)ir(r.d)};
+  app.querySelectorAll('[data-c]').forEach(b=>b.onclick=async()=>{
+    const c=ag.get().cons.find(x=>x.id===b.dataset.c);if(!c)return;
+    const nova=await formConsulta(c,pid,data);if(nova)ir(nova===true?data:nova.data);
+  });
+  if(p){
+    $('nc').onclick=async()=>{const nova=await formConsulta(null,pid,data);if(nova)ir(nova===true?data:nova.data)};
+    $('ea').onclick=async()=>{const r=await formProf(p);if(r==='excluida')refazer(abrirAgendas);else if(r)ir(data)};
+  }
+}
+
+/* ---- formulário de consulta (nova ou existente) ---- */
+async function formConsulta(c,pidTela,data,pre){
+  const d=ag.get(),profId=c?c.prof:pidTela,p0=d.profs.find(x=>x.id===profId);
+  if(!p0)return null;
+  let hora='08:00';
+  if(!c){
+    const dia=d.cons.filter(x=>x.prof===profId&&x.data===data&&ativa(x));
+    if(dia.length)hora=hm(Math.max.apply(null,dia.map(x=>toMin(x.hora)+(+x.dur||0))));
+  }
+  const v=pre||c||{pac:'',tel:'',data:data,hora:hora,dur:p0.dur||30,tipo:'particular',valor:p0.valor||0,status:'agendada',pago:false,forma:'',obs:''};
+  const html=
+    campo('pac','Paciente',v.pac,'text','placeholder="Nome do paciente" autocapitalize="words"')+
+    campo('tel','Telefone / WhatsApp',v.tel,'tel','inputmode="tel" placeholder="(85) 99999-9999"')+
+    '<div class="r2">'+campo('data','Data',v.data,'date')+campo('hora','Hora',v.hora,'time')+'</div>'+
+    '<div class="r2">'+campo('dur','Duração (min)',v.dur,'number','inputmode="numeric"')+selecao('tipo','Tipo',Object.keys(AG_TIPOS).map(k=>[k,AG_TIPOS[k]]),v.tipo)+'</div>'+
+    campo('valor','Valor (R$)',String(v.valor||'').replace('.',','),'text','inputmode="decimal" placeholder="0,00"')+
+    selecao('status','Situação',Object.keys(AG_STATUS).map(k=>[k,AG_STATUS[k][0]]),v.status)+
+    '<div class="r2">'+selecao('pago','Pagamento',[['0','Pendente'],['1','Pago']],v.pago?'1':'0')+selecao('forma','Forma',[['','—'],['Pix','Pix'],['Dinheiro','Dinheiro'],['Cartão','Cartão'],['Transferência','Transferência']],v.forma||'')+'</div>'+
+    '<label class="fl">Observações<textarea data-f="obs" rows="2">'+esc(v.obs||'')+'</textarea></label>'+
+    (c?'<div class="acs"><button type="button" class="b alt" data-a="zap">WhatsApp</button><button type="button" class="b alt" data-a="del" style="color:var(--err);border-color:var(--err)">Excluir</button></div>':'');
+  const r=await caixa({titulo:c?'Consulta':'Nova consulta',sub:p0.nome,html:html,ok:'Salvar',semEnter:true,semFoco:!!c,
+    acao:(a,ler,fim)=>{
+      if(a==='zap'){const x=ler();if(!zap({pac:x.pac,tel:x.tel,data:x.data,hora:x.hora},p0))toast('Informe um telefone com DDD.')}
+      else if(a==='del'){confirmar('Excluir consulta?','Essa ação não pode ser desfeita.','Excluir').then(ok=>{if(ok)fim({__del:1})})}
+    }});
+  if(!r)return null;
+  if(r.__del){const dd=ag.get();dd.cons=dd.cons.filter(x=>x.id!==c.id);ag.set(dd);toast('Consulta excluída.');return true}
+  const nova={id:c?c.id:uid(),prof:profId,data:r.data,hora:r.hora,dur:Math.max(5,parseInt(r.dur,10)||p0.dur||30),pac:r.pac.trim(),tel:r.tel.trim(),
+    tipo:r.tipo,valor:numBr(r.valor),status:r.status,pago:r.pago==='1',forma:r.forma,obs:r.obs.trim()};
+  if(!nova.pac){await avisar('Falta o nome','Digite o nome do paciente.');return formConsulta(c,pidTela,data,nova)}
+  if(!nova.data||!nova.hora){await avisar('Falta data ou hora','Preencha a data e a hora da consulta.');return formConsulta(c,pidTela,data,nova)}
+  const dd=ag.get();
+  if(ativa(nova)){
+    const ini=toMin(nova.hora),fim2=ini+nova.dur;
+    const choque=dd.cons.find(x=>x.id!==nova.id&&x.prof===nova.prof&&x.data===nova.data&&ativa(x)&&toMin(x.hora)<fim2&&toMin(x.hora)+(+x.dur||0)>ini);
+    if(choque&&!(await confirmar('Horário ocupado','Já existe consulta de '+(choque.pac||'outro paciente')+' às '+choque.hora+'. Agendar mesmo assim?','Agendar mesmo assim')))return formConsulta(c,pidTela,data,nova);
+  }
+  dd.cons=dd.cons.filter(x=>x.id!==nova.id).concat(nova);ag.set(dd);
+  toast('Consulta salva.');
+  return nova;
+}
+
+/* ---- formulário de agenda do profissional ---- */
+async function formProf(p){
+  const d=ag.get();
+  const cores=Object.keys(AG_CORES);
+  const v=p||{nome:'',esp:'',dur:30,valor:0,cor:AG_CORES[cores[d.profs.length%cores.length]]};
+  const corNome=cores.find(k=>AG_CORES[k]===v.cor)||'Azul';
+  const html=
+    campo('nome','Nome do profissional',v.nome,'text','placeholder="Ex: Dra. Ana" autocapitalize="words"')+
+    campo('esp','Especialidade',v.esp,'text','list="esps" placeholder="Ex: Geriatra"')+
+    '<datalist id="esps"><option value="Psiquiatra"><option value="Psicólogo(a)"><option value="Geriatra"></datalist>'+
+    '<div class="r2">'+campo('dur','Duração padrão (min)',v.dur,'number','inputmode="numeric"')+campo('valor','Valor padrão (R$)',String(v.valor||'').replace('.',','),'text','inputmode="decimal" placeholder="0,00"')+'</div>'+
+    selecao('cor','Cor da agenda',cores.map(k=>[k,k]),corNome)+
+    (p?'<div class="acs"><button type="button" class="b alt" data-a="del" style="color:var(--err);border-color:var(--err)">Excluir esta agenda</button></div>':'');
+  const r=await caixa({titulo:p?'Editar agenda':'Nova agenda',html:html,ok:'Salvar',semEnter:true,semFoco:!!p,
+    acao:(a,ler,fim)=>{
+      if(a==='del'){const n=ag.get().cons.filter(x=>x.prof===p.id).length;
+        confirmar('Excluir agenda?','Isso apaga também '+plural(n,'consulta','consultas')+' desta agenda. Não dá para desfazer.','Excluir').then(ok=>{if(ok)fim({__del:1})})}
+    }});
+  if(!r)return null;
+  const dd=ag.get();
+  if(r.__del){dd.profs=dd.profs.filter(x=>x.id!==p.id);dd.cons=dd.cons.filter(x=>x.prof!==p.id);ag.set(dd);toast('Agenda excluída.');return 'excluida'}
+  if(!r.nome.trim()){await avisar('Falta o nome','Digite o nome do profissional.');return null}
+  const novo={id:p?p.id:uid(),nome:r.nome.trim(),esp:r.esp.trim(),dur:Math.max(5,parseInt(r.dur,10)||30),valor:numBr(r.valor),cor:AG_CORES[r.cor]||'#1760c4'};
+  dd.profs=p?dd.profs.map(x=>x.id===p.id?novo:x):dd.profs.concat(novo);
+  ag.set(dd);toast(p?'Agenda atualizada.':'Agenda criada.');
+  return novo;
+}
+
+/* ---- resumo financeiro ---- */
+function menuResumoAg(){
+  menu('Resumo financeiro',[
+    {ic:'📅',t:'Hoje',f:()=>resumoAg('hoje')},
+    {ic:'🗓️',t:'Semana',f:()=>resumoAg('semana')},
+    {ic:'📆',t:'Mês',f:()=>resumoAg('mes')}
+  ],()=>refazer(abrirAgendas));
+}
+function resumoAg(per){
+  const h=hojeIso();let de,ate,tit;
+  if(per==='hoje'){de=ate=h;tit='de hoje'}
+  else if(per==='semana'){de=somaDias(h,-((dIso(h).getDay()+6)%7));ate=somaDias(de,6);tit='da semana'}
+  else{const t=dIso(h);de=isoD(new Date(t.getFullYear(),t.getMonth(),1));ate=isoD(new Date(t.getFullYear(),t.getMonth()+1,0));tit='do mês'}
+  const d=ag.get(),cons=d.cons.filter(c=>c.data>=de&&c.data<=ate);
+  const soma=l=>l.reduce((s,c)=>s+valorCons(c),0);
+  const lin=d.profs.map(p=>{
+    const l=cons.filter(c=>c.prof===p.id),at=l.filter(c=>c.status==='compareceu'),pend=l.filter(c=>c.status==='agendada'||c.status==='confirmada');
+    return{p:p,at:at.length,fa:l.filter(c=>c.status==='faltou').length,ca:l.filter(c=>c.status==='cancelada').length,pend:pend.length,
+      rec:soma(l.filter(c=>c.pago&&ativa(c))),rcb:soma(at.filter(c=>!c.pago)),prev:soma(pend.filter(c=>!c.pago)),cort:l.filter(c=>c.tipo==='cortesia'&&ativa(c)).length};
+  });
+  const T=k=>lin.reduce((s,x)=>s+x[k],0);
+  const linhaV=(r,v,cls)=>'<div class="rw"><span>'+r+'</span><b class="'+(cls||'')+'">'+v+'</b></div>';
+  const bloco=x=>'<div class="card" style="border-left:6px solid '+x.p.cor+'"><div class="nm">'+esc(x.p.nome)+'</div><div class="sub" style="margin-bottom:6px">'+esc(x.p.esp||'')+'</div>'+
+    linhaV('Atendidas',x.at)+linhaV('Faltas',x.fa)+linhaV('Canceladas',x.ca)+linhaV('Ainda por vir',x.pend)+(x.cort?linhaV('Cortesias (divulgação)',x.cort):'')+
+    linhaV('Recebido',brl(x.rec),'ok')+linhaV('A receber (atendidas)',brl(x.rcb),x.rcb?'err':'')+linhaV('Previsto (por vir)',brl(x.prev))+'</div>';
+  telaModulo('Resumo '+tit,
+    '<div class="sub" style="margin:-8px 0 12px">'+brD(de)+(de===ate?'':' a '+brD(ate))+'</div>'+
+    '<div class="card"><div class="nm">Total geral</div>'+linhaV('Atendidas',T('at'))+linhaV('Faltas',T('fa'))+linhaV('Recebido',brl(T('rec')),'ok')+linhaV('A receber (atendidas)',brl(T('rcb')),T('rcb')?'err':'')+linhaV('Previsto (por vir)',brl(T('prev')))+'</div>'+
+    (lin.length?lin.map(bloco).join(''):'<div class="card mut">Crie uma agenda para ver o resumo.</div>')+
+    (lin.length?'<button class="b wide" id="rcp">Copiar ou enviar</button>':''),menuResumoAg);
+  const rcp=$('rcp');
+  if(rcp)rcp.onclick=()=>compartilhar('Resumo '+tit+' ('+brD(de)+(de===ate?'':' a '+brD(ate))+')\nRecebido: '+brl(T('rec'))+' | A receber: '+brl(T('rcb'))+' | Previsto: '+brl(T('prev'))+'\n'+
+    lin.map(x=>x.p.nome+' ('+(x.p.esp||'—')+'): atendidas '+x.at+', faltas '+x.fa+', recebido '+brl(x.rec)+', a receber '+brl(x.rcb)).join('\n'));
+}
+
+/* ---- backup e exportação ---- */
+function abrirBackupAg(){
+  const d=ag.get();
+  telaModulo('Backup e exportar',
+    '<div class="card"><div class="sub">As agendas ficam salvas somente neste celular ('+plural(d.profs.length,'agenda','agendas')+', '+plural(d.cons.length,'consulta','consultas')+'). Se limpar os dados do navegador ou trocar de aparelho, elas somem. Faça backup com frequência e guarde o arquivo em local seguro, pois ele tem dados de pacientes.</div>'+
+    '<button class="b wide" id="bkd">Baixar backup (arquivo)</button>'+
+    '<button class="b alt wide" id="bkr">Restaurar backup</button>'+
+    '<input type="file" id="bkf" accept=".json,application/json" style="display:none"></div>'+
+    '<div class="card"><div class="sub">Lista com todas as consultas para abrir no Excel.</div><button class="b wide" id="bkc">Exportar consultas (CSV)</button></div>',()=>refazer(abrirAgendas));
+  const baixar=(nome,blob)=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=nome;document.body.appendChild(a);a.click();a.remove()};
+  $('bkd').onclick=()=>baixar('backup-agendas-'+hojeIso()+'.json',new Blob([JSON.stringify(ag.get())],{type:'application/json'}));
+  $('bkc').onclick=()=>{
+    const dd=ag.get(),q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"',nomeP=id=>(dd.profs.find(x=>x.id===id)||{}).nome||'';
+    const L=[['Data','Hora','Profissional','Paciente','Telefone','Tipo','Valor','Situação','Pago','Forma','Observações']].concat(
+      dd.cons.slice().sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora)).map(c=>[brD(c.data),c.hora,nomeP(c.prof),c.pac,'="'+String(c.tel||'').replace(/\D/g,'')+'"',AG_TIPOS[c.tipo]||c.tipo,String(valorCons(c)).replace('.',','),(AG_STATUS[c.status]||[c.status])[0],c.pago?'Sim':'Não',c.forma||'',c.obs||'']));
+    baixar('consultas-'+hojeIso()+'.csv',new Blob(['\ufeff'+L.map(r=>r.map(q).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'}));
+  };
+  $('bkr').onclick=()=>$('bkf').click();
+  $('bkf').onchange=async e=>{
+    const f=e.target.files&&e.target.files[0];if(!f)return;
+    let novo;try{novo=JSON.parse(await f.text())}catch(x){}
+    if(!novo||!Array.isArray(novo.profs)||!Array.isArray(novo.cons)){await avisar('Arquivo inválido','Esse arquivo não é um backup das agendas.');e.target.value='';return}
+    if(await confirmar('Restaurar backup?','Isso substitui as agendas deste celular por '+plural(novo.profs.length,'agenda','agendas')+' e '+plural(novo.cons.length,'consulta','consultas')+' do arquivo.','Restaurar')){
+      ag.set({profs:novo.profs,cons:novo.cons});toast('Backup restaurado.');refazer(abrirBackupAg);
+    }
+    e.target.value='';
+  };
 }
 
 /* ===== Menu do Estoque ===== */
