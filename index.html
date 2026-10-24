@@ -125,6 +125,13 @@ const app=$('app');
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const store={get(k,d){try{return JSON.parse(localStorage.getItem('calango:'+k))||d}catch(e){return d}},set(k,v){try{localStorage.setItem('calango:'+k,JSON.stringify(v))}catch(e){}}};
 let limpar=null,voltaAtual=null,porVoltar=false,agRe=null;
+/* janelas (caixas) abertas: o botão voltar do celular fecha a de cima, como o botão Cancelar */
+const dlgPilha=[];let dlgEntrada=false,dlgIgnorar=0;
+function dlgAbre(reg){if(!dlgEntrada){history.pushState({dlg:1},'');dlgEntrada=true}dlgPilha.push(reg)}
+function dlgFecha(reg){
+  const i=dlgPilha.indexOf(reg);if(i>=0)dlgPilha.splice(i,1);
+  if(!dlgPilha.length)setTimeout(()=>{if(!dlgPilha.length&&dlgEntrada){dlgEntrada=false;dlgIgnorar++;history.back()}},0);
+}
 
 const EM_BREVE=[['📅','Vencimentos'],['💲','Financeiro'],['📁','Documentos']];
 function inicio(){
@@ -145,6 +152,12 @@ function telaModulo(t,html,volta){
 }
 /* botão voltar do celular: volta uma tela do app */
 window.addEventListener('popstate',()=>{
+  if(dlgIgnorar>0){dlgIgnorar--;return}
+  if(dlgPilha.length){
+    dlgEntrada=false;dlgPilha[dlgPilha.length-1].cancelar();
+    if(dlgPilha.length){history.pushState({dlg:1},'');dlgEntrada=true}
+    return;
+  }
   if(!voltaAtual)return;
   const f=voltaAtual;porVoltar=true;
   try{f()}finally{porVoltar=false}
@@ -162,7 +175,10 @@ function caixa(o){return new Promise(res=>{
   ov.innerHTML='<div class="dlg" role="dialog" aria-modal="true"><h3>'+esc(o.titulo)+'</h3>'+(o.sub?'<div class="dsub">'+esc(o.sub)+'</div>':'')+(o.texto?'<p>'+esc(o.texto)+'</p>':'')+(o.html||'')+
     '<div class="dbt">'+(o.semCancelar?'':'<button class="b alt" data-x="0">'+esc(o.cancelar||'Cancelar')+'</button>')+'<button class="b" data-x="1">'+esc(o.ok||'OK')+'</button></div></div>';
   document.body.appendChild(ov);
-  const fim=v=>{ov.remove();res(v)};
+  let fechado=false;
+  const reg={cancelar:()=>fim(o.semCancelar?{}:null)};
+  const fim=v=>{if(fechado)return;fechado=true;ov.remove();dlgFecha(reg);res(v)};
+  dlgAbre(reg);
   const ler=()=>{const r={};ov.querySelectorAll('[data-f]').forEach(i=>r[i.dataset.f]=i.type==='checkbox'?(i.checked?'1':'0'):i.value);return r};
   ov.addEventListener('change',e=>{const f=e.target.dataset&&e.target.dataset.f;if(f&&o.mudou)o.mudou(f,ov)});
   ov.onclick=e=>{
