@@ -29,6 +29,8 @@ main{width:100%;max-width:520px;margin:0 auto;padding:18px max(22px,env(safe-are
 .tile .ic{font-size:1.8rem;line-height:1}
 .tile.soon .ic{filter:grayscale(1);opacity:.55}
 .tile.soon{background:#eef3fb;color:#7d8da9;box-shadow:none;cursor:default}
+.tile.soon .lg{width:64px;height:64px;object-fit:contain;mix-blend-mode:multiply;opacity:.85}
+.tile.soon .eb{font-size:.72rem;letter-spacing:.14em;font-weight:800;color:#7d8da9}
 .tile small{font-weight:500;font-size:.7rem;opacity:.85;margin-top:-3px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:12px}
 h2{font-size:1.45rem;font-weight:800;margin:6px 0 16px;color:#0a2f7a;letter-spacing:-.2px}
@@ -133,13 +135,13 @@ function dlgFecha(reg){
   if(!dlgPilha.length)setTimeout(()=>{if(!dlgPilha.length&&dlgEntrada){dlgEntrada=false;dlgIgnorar++;history.back()}},0);
 }
 
-const EM_BREVE=[['📅','Vencimentos'],['💲','Financeiro'],['📁','Documentos']];
+const EM_BREVE=[1,2,3];
 function inicio(){
   if(limpar){limpar();limpar=null}
   voltaAtual=null;
   app.innerHTML='<div class="welcome"><img src="banner.png" alt="Calango Digital" width="1000" height="533" fetchpriority="high" decoding="async"><b>Bem-vindo(a)!</b><span>Seus serviços organizados em um só lugar.</span></div>'+
     '<div class="grid">'+MODULES.map(m=>'<button class="tile" data-m="'+m.id+'"><span class="ic">'+m.icone+'</span>'+esc(m.titulo)+'</button>').join('')+
-    EM_BREVE.map(x=>'<div class="tile soon"><span class="ic">'+x[0]+'</span>'+x[1]+'<small>em breve</small></div>').join('')+'</div>';
+    EM_BREVE.map(()=>'<div class="tile soon"><img class="lg" src="icon-192.png" alt="" width="64" height="64"><b class="eb">EM BREVE</b></div>').join('')+'</div>';
   app.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>MODULES.find(m=>m.id===b.dataset.m).abrir());
 }
 function telaModulo(t,html,volta){
