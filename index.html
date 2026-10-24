@@ -50,6 +50,9 @@ input[type=text]{flex:1;min-width:0;padding:13px;border-radius:12px;border:1px s
 .qty button{width:42px;height:42px;padding:0;font-size:1.4rem}
 .qty b{min-width:34px;text-align:center;font-size:1.3rem;color:var(--sky)}
 .ed{background:none;border:0;color:var(--pri);padding:2px 0;font-size:.85rem;text-decoration:underline;cursor:pointer}
+.ac{display:flex;flex-wrap:wrap;gap:2px 14px;margin-top:2px}
+.qty .qn{min-width:40px;background:none;border:0;font:700 1.3rem system-ui,sans-serif;color:var(--sky);cursor:pointer}
+.item.zero{opacity:.55}
 .tot{display:flex;justify-content:space-between;font-weight:700;margin-bottom:6px}
 .ok{color:var(--ok)}.err{color:var(--err)}.mut{color:var(--mut)}
 .dif{font-weight:700;text-align:right;min-width:92px}
@@ -225,40 +228,64 @@ async function compartilhar(txt){
 /* ===== Contagem de estoque ===== */
 function abrirContagem(){
   telaModulo('Contagem',
+  '<div class="card"><div id="last" class="mut">Carregando a última contagem…</div></div>'+
   '<div class="card"><video id="v" playsinline muted></video>'+
-  '<button class="b wide" id="cam" style="margin-top:0">Abrir câmera e contar</button>'+
-  '<div id="last" class="mut" style="margin-top:10px">Cada leitura soma 1 unidade.</div>'+
+  '<button class="b wide" id="cam" style="margin-top:0">Abrir câmera para ler produto novo</button>'+
   '<div class="row" style="margin-top:8px"><input id="man" type="text" inputmode="numeric" placeholder="Código digitado"><button class="b alt" id="add">Somar</button></div></div>'+
-  '<div class="card"><div class="tot"><span>Itens diferentes: <span id="n">0</span></span><span>Unidades: <span id="u">0</span></span></div>'+
+  '<div class="card"><div class="tot"><span>Itens: <span id="n">0</span> · Unidades: <span id="u">0</span></span><span id="mx" class="mut"></span></div>'+
   '<div id="list"></div>'+
-  '<button class="b wide" id="fim">Finalizar e comparar com o estoque</button>'+
-  '<button class="b alt wide" id="reset">Zerar contagem atual</button>'+
+  '<button class="b wide" id="fim">Finalizar e salvar contagem</button>'+
+  '<button class="b alt wide" id="reset">Descartar alterações</button>'+
   '<button class="ed" id="cfgb" style="margin-top:10px">alterar senha da planilha</button></div>'+
   '<div id="cmp"></div>',abrirEstoque);
 
-  let cat=store.get('catalogo',{}),cnt=store.get('contagem',{});
+  let cat=store.get('catalogo',{}),cnt={},tocados={},base={};
   let stream=null,timer=null,det=null,lastCode='',lastAt=0,AC=null;
-  const save=()=>{store.set('catalogo',cat);store.set('contagem',cnt)};
+  const TXT_CAM='Abrir câmera para ler produto novo';
+  const save=()=>{store.set('catalogo',cat);store.set('rascunho2',{cnt,tocados})};
   const msg=h=>{$('last').innerHTML=h};
+  const agora=()=>new Date().toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  const num=v=>Math.round((Number(String(v).replace(',','.'))||0)*1000)/1000;
+  const fmt=n=>String(n).replace('.',',');
+  const comTempo=(p,ms)=>Promise.race([p,new Promise((_,rj)=>setTimeout(()=>rj(new Error('tempo')),ms))]);
+  const nome=c=>(cat[c]&&cat[c].name)||c;
+  const porNome=(a,b)=>nome(a).localeCompare(nome(b));
+  const nomesDe=s=>Object.keys(s).forEach(c=>{if(!cat[c]||!cat[c].name)cat[c]={name:s[c].nome||'',size:s[c].medida||''}});
 
   function beep(){
     try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();const o=AC.createOscillator(),g=AC.createGain();
     o.frequency.value=880;g.gain.value=.15;o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+.1)}catch(e){}
     if(navigator.vibrate)navigator.vibrate(60);
   }
-  const nome=c=>(cat[c]&&cat[c].name)||c;
-  function render(){
-    const codes=Object.keys(cnt).filter(c=>cnt[c]>0).sort((a,b)=>nome(a).localeCompare(nome(b)));
-    $('n').textContent=codes.length;
-    $('u').textContent=codes.reduce((s,c)=>s+cnt[c],0);
-    $('list').innerHTML=codes.length?codes.map(c=>{
-      const p=cat[c]||{};
-      return '<div class="item"><div class="info"><div class="nm">'+esc(p.name||'Produto sem nome')+'</div>'+
-      '<div class="sub">'+esc([p.size,c].filter(Boolean).join(' · '))+'</div>'+
-      '<button class="ed" data-e="'+c+'">editar nome e medida</button></div>'+
-      '<div class="qty"><button class="b alt" data-m="'+c+'">−</button><b>'+cnt[c]+'</b><button class="b" data-p="'+c+'">+</button></div></div>';
-    }).join(''):'<span class="mut">Nenhuma leitura ainda.</span>';
+
+  /* monta a lista de trabalho: o que você mexeu fica; o que não mexeu acompanha a última contagem salva */
+  function reconstruir(manter){
+    const t=manter?tocados:{},n={};
+    Object.keys(t).forEach(c=>{if(cnt[c]!==undefined)n[c]=cnt[c]});
+    Object.keys(base).forEach(c=>{if(!t[c]&&base[c].qtd>0)n[c]=base[c].qtd});
+    cnt=n;tocados=t;
   }
+
+  function render(){
+    const codes=Object.keys(cnt).sort(porNome);
+    $('n').textContent=codes.filter(c=>cnt[c]>0).length;
+    $('u').textContent=fmt(Math.round(codes.reduce((s,c)=>s+cnt[c],0)*1000)/1000);
+    const sm=Object.keys(base).filter(c=>base[c].qtd>0&&!tocados[c]).length;
+    $('mx').textContent=sm?'Sem mexer: '+sm:'';
+    $('list').innerHTML=codes.length?codes.map(c=>{
+      const p=cat[c]||{},b=base[c]?base[c].qtd:undefined,q=cnt[c];
+      let est;
+      if(!tocados[c])est='<span class="mut">sem alteração</span>';
+      else if(b===undefined)est='<span class="ok">novo</span>';
+      else if(q===b)est='<span class="ok">conferido</span>';
+      else est='<span class="'+(q>b?'ok':'err')+'">antes '+fmt(b)+'</span>';
+      return '<div class="item'+(q===0?' zero':'')+'"><div class="info"><div class="nm">'+esc(p.name||'Produto sem nome')+'</div>'+
+        '<div class="sub">'+esc([p.size,c].filter(Boolean).join(' · '))+' · '+est+'</div>'+
+        '<div class="ac">'+(tocados[c]?'':'<button class="ed" data-ok="'+c+'">está igual</button>')+'<button class="ed" data-z="'+c+'">zerar</button><button class="ed" data-e="'+c+'">editar nome</button></div></div>'+
+        '<div class="qty"><button class="b alt" data-m="'+c+'">−</button><button class="qn" data-q="'+c+'">'+fmt(q)+'</button><button class="b" data-p="'+c+'">+</button></div></div>';
+    }).join(''):'<span class="mut">Nenhum produto ainda.</span>';
+  }
+
   async function lookup(c){
     try{
       const r=await fetch('https://world.openfoodfacts.org/api/v2/product/'+c+'.json?fields=product_name,quantity');
@@ -266,62 +293,106 @@ function abrirContagem(){
       if(d.status===1&&d.product&&d.product.product_name){cat[c]={name:d.product.product_name,size:d.product.quantity||''};save();render()}
     }catch(e){}
   }
+
   function contar(c){
     c=String(c).replace(/\D/g,'');if(c.length<8)return;
-    cnt[c]=(cnt[c]||0)+1;
+    cnt[c]=num((cnt[c]||0)+1);tocados[c]=1;
     const novo=!cat[c]||!cat[c].name;
     if(!cat[c])cat[c]={name:'',size:''};
     save();render();beep();
-    msg('<span class="ok">Lido:</span> '+esc(nome(c))+' (total '+cnt[c]+')');
+    msg('<span class="ok">Lido:</span> '+esc(nome(c))+' (agora '+fmt(cnt[c])+')');
     if(novo)lookup(c);
   }
-  $('list').onclick=e=>{
-    const t=e.target;
-    if(t.dataset.p){cnt[t.dataset.p]++;save();render()}
-    else if(t.dataset.m){cnt[t.dataset.m]=Math.max(0,cnt[t.dataset.m]-1);save();render()}
-    else if(t.dataset.e){
-      const c=t.dataset.e,p=cat[c]||{name:'',size:''};
-      caixa({titulo:'Editar produto',html:campo('n','Nome do produto',p.name)+campo('m','Medida (ex: 500 g)',p.size),ok:'Salvar'}).then(r=>{
-        if(!r)return;cat[c]={name:r.n.trim(),size:r.m.trim()};save();render();
-      });
+
+  /* abre a tela: busca a última contagem salva (ou usa a guardada no celular) */
+  async function carregar(){
+    let itens=null,quando='',sem=false,recusou=false,semSenha=false;
+    try{
+      const d=await comTempo(apiGet({action:'saldo'}),9000);
+      if(d.ok){itens=d.itens;quando=agora();store.set('ultimoSaldo',{itens,quando})}
+      else{recusou=true;msg('<span class="err">A planilha recusou: '+esc(d.erro||'erro')+'. Confira a senha em “alterar senha da planilha”.</span>')}
+    }catch(e){if(e.message==='config')semSenha=true;else sem=true}
+    if(!itens){const u=store.get('ultimoSaldo',null);if(u){itens=u.itens;quando=u.quando}}
+    base=itens||{};nomesDe(base);
+    const r=store.get('rascunho2',null);
+    cnt=(r&&r.cnt)||{};tocados=(r&&r.tocados)||{};
+    reconstruir(true);save();render();
+    const tem=Object.keys(base).length>0;
+    if(semSenha)msg('<span class="err">Falta a senha da planilha.</span> Toque em “alterar senha da planilha” para carregar a última contagem.');
+    else if(sem)msg('<span class="err">Sem internet.</span> '+(tem?'Usando a lista guardada neste celular ('+esc(quando)+'). Você pode ajustar, mas para salvar é preciso internet.':'Não há lista guardada neste celular. Conecte-se para carregar a última contagem.'));
+    else if(!recusou)msg(tem?'<span class="ok">Lista da última contagem salva.</span> Ajuste o que mudou e finalize.':'Primeira contagem: leia os produtos para montar o estoque inicial.');
+  }
+
+  $('list').onclick=async e=>{
+    const t=e.target.closest('button');if(!t)return;const d=t.dataset;
+    const mexe=(c,v)=>{cnt[c]=Math.max(0,num(v));tocados[c]=1;save();render()};
+    if(d.p)mexe(d.p,cnt[d.p]+1);
+    else if(d.m)mexe(d.m,cnt[d.m]-1);
+    else if(d.z)mexe(d.z,0);
+    else if(d.ok){tocados[d.ok]=1;save();render()}
+    else if(d.q){
+      const r=await caixa({titulo:'Quantidade',sub:nome(d.q),html:campo('q','Quantidade',fmt(cnt[d.q]),'text','inputmode="decimal"'),ok:'Salvar'});
+      if(r)mexe(d.q,r.q);
+    }else if(d.e){
+      const c=d.e,p=cat[c]||{name:'',size:''};
+      const r=await caixa({titulo:'Editar produto',html:campo('n','Nome do produto',p.name)+campo('m','Medida (ex: 500 g)',p.size),ok:'Salvar'});
+      if(r){cat[c]={name:r.n.trim(),size:r.m.trim()};save();render()}
     }
   };
   $('add').onclick=()=>{contar($('man').value);$('man').value=''};
-  $('reset').onclick=async()=>{if(await confirmar('Zerar contagem?','O estoque salvo na planilha não muda.','Zerar')){cnt={};save();render();$('cmp').innerHTML='';msg('Contagem zerada.')}};
-  $('cfgb').onclick=async()=>{if(await cfg(true))msg('<span class="ok">Planilha configurada.</span>')};
+  $('reset').onclick=async()=>{
+    if(await confirmar('Descartar alterações?','A lista volta para a última contagem salva.','Descartar')){
+      cnt={};tocados={};reconstruir(false);save();render();$('cmp').innerHTML='';msg('Alterações descartadas.');
+    }
+  };
+  $('cfgb').onclick=async()=>{if(await cfg(true)){msg('Senha salva. Carregando…');carregar()}};
 
   $('fim').onclick=async()=>{
-    if(!Object.keys(cnt).length){msg('Nenhum item lido.');return}
-    msg('Buscando o estoque anterior…');
+    if(!Object.keys(cnt).length){msg('Nenhum item na lista.');return}
+    msg('Buscando o estoque salvo…');
     let saldo;
     try{
-      const d=await apiGet({action:'saldo'});
+      const d=await comTempo(apiGet({action:'saldo'}),10000);
       if(!d.ok){msg('<span class="err">A planilha recusou: '+esc(d.erro||'erro')+'. Confira a senha.</span>');return}
       saldo=d.itens;
-    }catch(e){msg('<span class="err">Não consegui falar com a planilha. Confira a internet e a configuração. A contagem continua salva.</span>');return}
-    comparar(saldo);
+    }catch(e){msg('<span class="err">Sem internet ou planilha indisponível. Para salvar é preciso internet. Suas alterações continuam guardadas neste celular.</span>');return}
+    base=saldo;nomesDe(saldo);reconstruir(true);save();render();
+    const inicial=Object.keys(saldo).length===0;
+    const nm=Object.keys(saldo).filter(c=>saldo[c].qtd>0&&!tocados[c]).sort(porNome);
+    if(!inicial&&nm.length){
+      const lista=nm.slice(0,12).map(nome).join(', ')+(nm.length>12?' e mais '+(nm.length-12):'');
+      const ok=await caixa({titulo:'Você não mexeu em '+plural(nm.length,'item','itens'),texto:lista+'. Eles serão salvos como estão. Se algum mudou, volte e ajuste.',ok:'Estão certos, continuar',cancelar:'Voltar e conferir'});
+      if(!ok){msg('Confira os itens marcados como “sem alteração”. Toque em “está igual” quando estiver certo.');return}
+    }
+    comparar(saldo,inicial);
   };
 
-  function comparar(saldo){
-    const inicial=Object.keys(saldo).length===0;
-    const codes=Object.keys(cnt).filter(c=>cnt[c]>0||saldo[c]).sort((a,b)=>nome(a).localeCompare(nome(b)));
-    const rows=codes.map(c=>{const antes=saldo[c]?saldo[c].qtd:0;return{c,antes,agora:cnt[c]||0,dif:(cnt[c]||0)-antes}});
-    const nl=Object.keys(saldo).filter(c=>cnt[c]===undefined&&saldo[c].qtd>0);
-    let ent=0,sai=0;rows.forEach(r=>{if(r.dif>0)ent+=r.dif;else sai-=r.dif});
-    const lab=r=>inicial?'<span class="mut">estoque inicial</span>':r.dif===0?'<span class="mut">igual</span>':r.dif>0?'<span class="ok">+'+r.dif+' entrou</span>':'<span class="err">'+r.dif+' saiu</span>'.replace('-','−');
-    $('cmp').innerHTML='<div class="card"><h2 style="margin-top:0">'+(inicial?'Primeira contagem':'Comparação com o estoque anterior')+'</h2>'+
-      (inicial?'<p class="mut">Ainda não há estoque na planilha. Esta contagem será salva como estoque inicial.</p>':'<div class="tot"><span class="ok">Entrou: '+ent+'</span><span class="err">Saiu: '+sai+'</span></div>')+
-      rows.filter(r=>r.agora>0||r.antes>0).map(r=>'<div class="item"><div class="info"><div class="nm">'+esc(nome(r.c))+'</div><div class="sub">'+esc((cat[r.c]&&cat[r.c].size)||'')+(inicial?'':' antes '+r.antes+' · agora '+r.agora)+'</div></div><div class="dif">'+(inicial?r.agora+' un.':lab(r))+'</div></div>').join('')+
-      (nl.length?'<div class="sub" style="margin-top:10px"><b>Não lidos nesta contagem:</b> '+nl.map(c=>esc(nome(c))+' ('+saldo[c].qtd+')').join(', ')+'</div><label class="chk"><input type="checkbox" id="zn"> Considerar os não lidos como zerados (saíram)</label>':'')+
+  function comparar(saldo,inicial){
+    const codes=Object.keys(cnt).filter(c=>cnt[c]>0||saldo[c]).sort(porNome);
+    const rows=codes.map(c=>{const antes=saldo[c]?saldo[c].qtd:0;return{c,antes,agora:cnt[c],dif:num(cnt[c]-antes)}});
+    const mud=rows.filter(r=>r.dif!==0);
+    let ent=0,sai=0;rows.forEach(r=>{if(r.dif>0)ent+=r.dif;else if(r.dif<0)sai-=r.dif});
+    const lab=r=>inicial?'<span class="mut">inicial</span>':r.dif>0?'<span class="ok">+'+fmt(r.dif)+' entrou</span>':'<span class="err">−'+fmt(Math.abs(r.dif))+' saiu</span>';
+    $('cmp').innerHTML='<div class="card"><h2 style="margin-top:0">'+(inicial?'Primeira contagem':'Comparação com a última contagem')+'</h2>'+
+      (inicial?'<p class="mut">Ainda não há estoque na planilha. Esta contagem será salva como estoque inicial.</p>':'<div class="tot"><span class="ok">Entrou: '+fmt(Math.round(ent*1000)/1000)+'</span><span class="err">Saiu: '+fmt(Math.round(sai*1000)/1000)+'</span></div>')+
+      (inicial?rows:mud).map(r=>'<div class="item"><div class="info"><div class="nm">'+esc(nome(r.c))+'</div><div class="sub">'+esc((cat[r.c]&&cat[r.c].size)||'')+(inicial?'':' antes '+fmt(r.antes)+' · agora '+fmt(r.agora))+'</div></div><div class="dif">'+(inicial?fmt(r.agora)+' un.':lab(r))+'</div></div>').join('')+
+      (!inicial&&!mud.length?'<p class="mut">Nenhuma alteração em relação à última contagem.</p>':'')+
+      (!inicial&&mud.length&&rows.length>mud.length?'<div class="sub" style="margin-top:8px">'+(rows.length-mud.length===1?'1 item igual não aparece aqui.':(rows.length-mud.length)+' itens iguais não aparecem aqui.')+'</div>':'')+
       '<button class="b wide" id="conf">Confirmar e salvar na planilha</button></div>';
     $('conf').onclick=async()=>{
-      $('conf').disabled=true;$('conf').textContent='Salvando…';
-      const itens=rows.filter(r=>cnt[r.c]!==undefined).map(r=>({codigo:r.c,nome:(cat[r.c]&&cat[r.c].name)||'',medida:(cat[r.c]&&cat[r.c].size)||'',qtd:r.agora}));
+      const bt=$('conf');bt.disabled=true;bt.textContent='Salvando…';
+      const itens=rows.map(r=>({codigo:r.c,nome:(cat[r.c]&&cat[r.c].name)||'',medida:(cat[r.c]&&cat[r.c].size)||'',qtd:r.agora}));
       try{
-        const d=await apiPost({acao:'salvar',itens,zerarNaoLidos:!!($('zn')&&$('zn').checked)});
-        if(d.ok){cnt={};save();render();$('cmp').innerHTML='';msg('<span class="ok">Salvo na planilha.</span> '+(d.inicial?'Estoque inicial registrado.':d.mov+' movimentações registradas.'))}
-        else{msg('<span class="err">A planilha recusou: '+esc(d.erro||'erro')+'</span>');$('conf').disabled=false;$('conf').textContent='Confirmar e salvar na planilha'}
-      }catch(e){msg('<span class="err">Não consegui salvar. A contagem continua aqui, tente de novo.</span>');$('conf').disabled=false;$('conf').textContent='Confirmar e salvar na planilha'}
+        const d=await apiPost({acao:'salvar',itens,zerarNaoLidos:false});
+        if(d.ok){
+          const nb={};Object.keys(saldo).forEach(c=>nb[c]=saldo[c]);
+          itens.forEach(i=>nb[i.codigo]={nome:i.nome,medida:i.medida,qtd:i.qtd});
+          base=nb;store.set('ultimoSaldo',{itens:nb,quando:agora()});
+          cnt={};tocados={};reconstruir(false);save();render();$('cmp').innerHTML='';
+          msg('<span class="ok">Salvo na planilha.</span> '+(d.inicial?'Estoque inicial registrado.':d.mov+' movimentações registradas.')+' A lista abaixo já é a base da próxima contagem.');
+          window.scrollTo({top:0,behavior:'smooth'});
+        }else{msg('<span class="err">A planilha recusou: '+esc(d.erro||'erro')+'</span>');bt.disabled=false;bt.textContent='Confirmar e salvar na planilha'}
+      }catch(e){msg('<span class="err">Não consegui salvar. A lista continua aqui, tente de novo.</span>');bt.disabled=false;bt.textContent='Confirmar e salvar na planilha'}
     };
     $('cmp').scrollIntoView({behavior:'smooth'});
   }
@@ -329,7 +400,7 @@ function abrirContagem(){
   function parar(){
     if(timer){clearInterval(timer);timer=null}
     if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
-    const v=$('v'),b=$('cam');if(v)v.style.display='none';if(b)b.textContent='Abrir câmera e contar';
+    const v=$('v'),b=$('cam');if(v)v.style.display='none';if(b)b.textContent=TXT_CAM;
   }
   limpar=parar;
   $('cam').onclick=async()=>{
@@ -339,7 +410,7 @@ function abrirContagem(){
     try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})}
     catch(e){msg('<span class="err">A câmera não abriu. Permita o acesso à câmera no navegador e abra pelo link https.</span>');return}
     const v=$('v');v.srcObject=stream;v.style.display='block';await v.play();
-    $('cam').textContent='Parar câmera';msg('Aponte para cada unidade…');
+    $('cam').textContent='Parar câmera';msg('Aponte para o produto…');
     timer=setInterval(async()=>{
       try{const r=await det.detect(v);
         if(r.length){const c=r[0].rawValue,now=Date.now();
@@ -348,6 +419,7 @@ function abrirContagem(){
     },300);
   };
   render();
+  carregar();
 }
 
 /* ===== Agendas dos profissionais ===== */
