@@ -97,6 +97,14 @@ label.chk{display:flex;gap:8px;align-items:center;margin:10px 0;color:var(--mut)
 .ch{display:inline-block;font-size:.72rem;font-weight:700;color:#fff;padding:3px 9px;border-radius:999px}
 .ch.pg{background:#1f7a4d}.ch.pd{background:#e07b1a}
 .rw{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:.95rem}
+.sl{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:#f4f8ff;border:1.5px dashed #b9cff0;border-radius:16px;padding:12px;margin-bottom:10px;cursor:pointer;color:var(--pri);font-family:inherit}
+.sl b{font-size:1.05rem;color:#0a2f7a;min-width:52px;text-align:center}.sl span{font-weight:700;font-size:.9rem}
+.info{font-size:.85rem;color:var(--mut);text-align:center;margin:0 0 12px}
+.dlg .hr{display:flex;align-items:center;gap:6px;margin-top:8px}
+.dlg .hr span{font-size:.85rem;color:var(--mut)}
+.dlg .hr input[type=time]{flex:1;min-width:0;margin:0;padding:10px 6px;font-size:.9rem;text-align:center}
+.dlg .hr label.ck{display:flex;align-items:center;gap:7px;flex:0 0 66px;margin:0;font-weight:700;font-size:.9rem;color:var(--ink)}
+.dlg input[type=checkbox]{display:inline-block;width:20px;height:20px;margin:0;padding:0;accent-color:#1760c4}
 </style>
 </head>
 <body>
@@ -152,7 +160,8 @@ function caixa(o){return new Promise(res=>{
     '<div class="dbt">'+(o.semCancelar?'':'<button class="b alt" data-x="0">'+esc(o.cancelar||'Cancelar')+'</button>')+'<button class="b" data-x="1">'+esc(o.ok||'OK')+'</button></div></div>';
   document.body.appendChild(ov);
   const fim=v=>{ov.remove();res(v)};
-  const ler=()=>{const r={};ov.querySelectorAll('[data-f]').forEach(i=>r[i.dataset.f]=i.value);return r};
+  const ler=()=>{const r={};ov.querySelectorAll('[data-f]').forEach(i=>r[i.dataset.f]=i.type==='checkbox'?(i.checked?'1':'0'):i.value);return r};
+  ov.addEventListener('change',e=>{const f=e.target.dataset&&e.target.dataset.f;if(f&&o.mudou)o.mudou(f,ov)});
   ov.onclick=e=>{
     const ac=e.target.closest('[data-a]');
     if(ac&&o.acao){o.acao(ac.dataset.a,ler,fim);return}
@@ -335,11 +344,9 @@ const dIso=s=>{const a=s.split('-').map(Number);return new Date(a[0],a[1]-1,a[2]
 const somaDias=(s,n)=>{const d=dIso(s);d.setDate(d.getDate()+n);return isoD(d)};
 const toMin=h=>{const a=String(h).split(':').map(Number);return (a[0]||0)*60+(a[1]||0)};
 const hm=m=>String(Math.floor(m/60)%24).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
-const brl=v=>'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const dataLonga=s=>{const d=dIso(s);return AG_DIAS[d.getDay()]+', '+String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')};
 const refazer=f=>{porVoltar=true;try{f()}finally{porVoltar=false}};
 const ativa=c=>c.status!=='cancelada';
-const valorCons=c=>c.tipo==='cortesia'?0:(Number(c.valor)||0);
 const plural=(n,a,b)=>n+' '+(n===1?a:b);
 const selecao=(id,rot,ops,val)=>'<label class="fl">'+esc(rot)+'<select data-f="'+id+'">'+ops.map(o=>'<option value="'+esc(o[0])+'"'+(String(o[0])===String(val)?' selected':'')+'>'+esc(o[1])+'</option>').join('')+'</select></label>';
 const numBr=s=>Number(String(s==null?'':s).replace(',','.'))||0;
@@ -362,7 +369,7 @@ function abrirAgendas(){
   const cards=d.profs.map(p=>{
     const l=d.cons.filter(c=>c.prof===p.id&&c.data===h&&ativa(c));
     const conf=l.filter(c=>c.status==='agendada').length;
-    return '<button class="pc" data-p="'+p.id+'" style="border-left:6px solid '+p.cor+'"><div class="pn">'+esc(p.nome)+'</div><div class="ps">'+esc(p.esp||'')+'</div>'+
+    return '<button class="pc" data-p="'+p.id+'" style="border-left:6px solid '+p.cor+'"><div class="pn">'+esc(p.nome)+'</div><div class="ps">'+esc(p.esp||'')+'</div><div class="ps">'+esc(resumoHor(p))+'</div>'+
       '<div class="pm">Hoje: <b>'+plural(l.length,'consulta','consultas')+'</b>'+(conf?' · <span class="err">'+conf+' a confirmar</span>':'')+'</div></button>';
   }).join('');
   telaModulo('Agendas',
@@ -376,32 +383,73 @@ function abrirAgendas(){
   $('agb').onclick=abrirBackupAg;
 }
 
+/* ---- horários de atendimento ---- */
+const AG_ORDEM=[1,2,3,4,5,6,0];
+const AG_SLOTS=[15,20,30,40,45,60];
+const horPadrao=()=>{const h={};[1,2,3,4,5].forEach(w=>h[w]={a:'08:00',b:'12:00'});return h};
+function agSlots(p,data){
+  const h=(p.hor||{})[dIso(data).getDay()];
+  if(!h)return [];
+  const passo=+p.slot||30,a=toMin(h.a),b=toMin(h.b);
+  const pi=p.pausa&&p.pausa.a?toMin(p.pausa.a):-1,pf=p.pausa&&p.pausa.b?toMin(p.pausa.b):-1;
+  const r=[];
+  for(let s=a;s+passo<=b;s+=passo){
+    if(pi>=0&&pf>pi&&s<pf&&s+passo>pi)continue;
+    r.push(hm(s));
+  }
+  return r;
+}
+function resumoHor(p){
+  const dias=AG_ORDEM.filter(w=>p.hor&&p.hor[w]);
+  if(!dias.length)return 'Horários não definidos';
+  const iguais=dias.every(w=>p.hor[w].a===p.hor[dias[0]].a&&p.hor[w].b===p.hor[dias[0]].b);
+  return dias.map(w=>AG_DIAS[w]).join(', ')+(iguais?' · '+p.hor[dias[0]].a+' às '+p.hor[dias[0]].b:' · horários variados');
+}
+function opcoesHora(p,dd,dt,atual,ignId){
+  const passo=+p.slot||30,sl=agSlots(p,dt);
+  const ocup=h=>dd.cons.some(x=>x.id!==ignId&&x.prof===p.id&&x.data===dt&&ativa(x)&&toMin(x.hora)>=toMin(h)&&toMin(x.hora)<toMin(h)+passo);
+  const ops=sl.map(h=>'<option value="'+h+'"'+(h===atual?' selected':'')+(ocup(h)?' disabled':'')+'>'+h+(ocup(h)?' — ocupado':'')+'</option>');
+  if(atual&&sl.indexOf(atual)<0)ops.unshift('<option value="'+esc(atual)+'" selected>'+esc(atual)+'</option>');
+  if(!ops.length)return '<option value="">'+(p.hor&&Object.keys(p.hor).length?'Sem atendimento neste dia':'Horários não definidos')+'</option>';
+  return '<option value="">Escolha o horário…</option>'+ops.join('');
+}
+
 /* ---- dia (de um profissional ou de todos) ---- */
 function abrirDia(pid,data){
   const d=ag.get(),p=pid?d.profs.find(x=>x.id===pid):null;
   if(pid&&!p){refazer(abrirAgendas);return}
   const filtra=c=>!pid||c.prof===pid;
-  const lista=d.cons.filter(c=>filtra(c)&&c.data===data).sort((a,b)=>a.hora.localeCompare(b.hora));
+  const lista=d.cons.filter(c=>filtra(c)&&c.data===data);
   const seg=somaDias(data,-((dIso(data).getDay()+6)%7)),h=hojeIso();
   const sem=[0,1,2,3,4,5,6].map(i=>{
     const s=somaDias(seg,i),n=d.cons.filter(c=>filtra(c)&&c.data===s&&ativa(c)).length;
     return '<button class="wd'+(s===data?' on':'')+(s===h?' td':'')+'" data-d="'+s+'"><small>'+AG_DIAS[dIso(s).getDay()]+'</small><b>'+dIso(s).getDate()+'</b><i>'+(n||'')+'</i></button>';
   }).join('');
-  const itens=lista.map(c=>{
+  const cartao=c=>{
     const pr=d.profs.find(x=>x.id===c.prof)||{nome:'?',cor:'#999'},st=AG_STATUS[c.status]||AG_STATUS.agendada;
-    const pagoChip=c.tipo==='cortesia'?'':c.pago?'<span class="ch pg">Pago</span>':(c.status==='compareceu'&&valorCons(c)>0?'<span class="ch pd">A receber</span>':'');
     const tipo=AG_TIPOS[c.tipo]?AG_TIPOS[c.tipo].replace(' (divulgação)',''):'';
     return '<button class="ap" data-c="'+c.id+'" style="border-left:6px solid '+pr.cor+'"><div class="ah"><b>'+esc(c.hora)+'</b></div>'+
-      '<div class="ai"><div class="nm">'+esc(c.pac||'Sem nome')+'</div><div class="sub">'+(p?'':esc(pr.nome)+' · ')+esc(tipo)+(c.tipo==='particular'&&valorCons(c)?' · '+brl(valorCons(c)):'')+'</div>'+
-      '<div class="chips"><span class="ch" style="background:'+st[1]+'">'+st[0]+'</span>'+pagoChip+'</div></div></button>';
-  }).join('');
+      '<div class="ai"><div class="nm">'+esc(c.pac||'Sem nome')+'</div><div class="sub">'+(p?'':esc(pr.nome)+' · ')+esc(tipo)+'</div>'+
+      '<div class="chips"><span class="ch" style="background:'+st[1]+'">'+st[0]+'</span></div></div></button>';
+  };
+  const passo=p?(+p.slot||30):30,slots=p?agSlots(p,data):[];
+  const livres=slots.filter(s=>!lista.some(c=>ativa(c)&&toMin(c.hora)>=toMin(s)&&toMin(c.hora)<toMin(s)+passo));
+  const linhas=lista.map(c=>({h:c.hora,html:cartao(c)})).concat(livres.map(s=>({h:s,html:'<button class="sl" data-s="'+s+'"><b>'+s+'</b><span>Livre · toque para agendar</span></button>'})));
+  linhas.sort((x,y)=>x.h.localeCompare(y.h));
   const ativas=lista.filter(ativa).length;
+  let info='';
+  if(p){
+    const hd=p.hor&&p.hor[dIso(data).getDay()];
+    if(!p.hor||!Object.keys(p.hor).length)info='Defina os dias e horários de atendimento em “editar dados desta agenda”.';
+    else info=hd?'Atendimento: '+hd.a+' às '+hd.b+(p.pausa&&p.pausa.a?' (pausa '+p.pausa.a+'–'+p.pausa.b+')':'')+' · consultas de '+passo+' min':'Sem atendimento neste dia. Use “+ Nova consulta” para um encaixe.';
+  }
   telaModulo(p?p.nome:'Agenda geral',
-    (p&&(p.esp||p.valor)?'<div class="sub" style="margin:-8px 0 12px">'+[esc(p.esp||''),p.valor?brl(p.valor):''].filter(Boolean).join(' · ')+'</div>':'')+
+    (p&&p.esp?'<div class="sub" style="margin:-8px 0 12px">'+esc(p.esp)+'</div>':'')+
     '<div class="wk">'+sem+'</div>'+
     '<div class="dn"><button class="nv" id="dp">‹</button><div class="dt">'+dataLonga(data)+(data===h?' · hoje':'')+'<div class="sub" style="font-weight:600">'+plural(ativas,'consulta','consultas')+'</div></div><button class="nv" id="dx">›</button></div>'+
-    '<div class="row" style="margin-bottom:12px"><button class="b alt" id="dh" style="flex:1;padding:11px">Hoje</button><button class="b alt" id="dg" style="flex:1;padding:11px">Ir para data</button></div>'+
-    (itens||'<div class="card mut">Nenhuma consulta neste dia.</div>')+
+    '<div class="row" style="margin-bottom:10px"><button class="b alt" id="dh" style="flex:1;padding:11px">Hoje</button><button class="b alt" id="dg" style="flex:1;padding:11px">Ir para data</button></div>'+
+    (info?'<div class="info">'+esc(info)+'</div>':'')+
+    (linhas.map(x=>x.html).join('')||'<div class="card mut">Nenhuma consulta neste dia.</div>')+
     (p?'<button class="b wide" id="nc">+ Nova consulta</button><button class="ed" id="ea" style="margin-top:12px">editar dados desta agenda</button>':''),
     ()=>refazer(abrirAgendas));
   const ir=s=>refazer(()=>abrirDia(pid,s));
@@ -415,42 +463,55 @@ function abrirDia(pid,data){
     const nova=await formConsulta(c,pid,data);if(nova)ir(nova===true?data:nova.data);
   });
   if(p){
+    app.querySelectorAll('[data-s]').forEach(b=>b.onclick=async()=>{const nova=await formConsulta(null,pid,data,null,b.dataset.s);if(nova)ir(nova===true?data:nova.data)});
     $('nc').onclick=async()=>{const nova=await formConsulta(null,pid,data);if(nova)ir(nova===true?data:nova.data)};
     $('ea').onclick=async()=>{const r=await formProf(p);if(r==='excluida')refazer(abrirAgendas);else if(r)ir(data)};
   }
 }
 
 /* ---- formulário de consulta (nova ou existente) ---- */
-async function formConsulta(c,pidTela,data,pre){
+async function formConsulta(c,pidTela,data,pre,horaIni){
   const d=ag.get(),profId=c?c.prof:pidTela,p0=d.profs.find(x=>x.id===profId);
   if(!p0)return null;
-  const hora='08:00';
-  const v=pre||c||{pac:'',tel:'',data:data,hora:hora,dur:p0.dur||30,tipo:'particular',valor:p0.valor||0,status:'agendada',pago:false,forma:'',obs:''};
+  const v=pre||c||{pac:'',tel:'',data:data,hora:horaIni||'',tipo:'particular',status:'agendada',obs:''};
   const html=
     campo('pac','Paciente',v.pac,'text','placeholder="Nome do paciente" autocapitalize="words"')+
     campo('tel','Telefone / WhatsApp',v.tel,'tel','inputmode="tel" placeholder="(85) 99999-9999"')+
-    '<div class="r2">'+campo('data','Data',v.data,'date')+campo('hora','Hora',v.hora,'time')+'</div>'+
-    selecao('tipo','Tipo',Object.keys(AG_TIPOS).map(k=>[k,AG_TIPOS[k]]),v.tipo)+
-    campo('valor','Valor (R$)',String(v.valor||'').replace('.',','),'text','inputmode="decimal" placeholder="0,00"')+
-    selecao('status','Situação',Object.keys(AG_STATUS).map(k=>[k,AG_STATUS[k][0]]),v.status)+
-    '<div class="r2">'+selecao('pago','Pagamento',[['0','Pendente'],['1','Pago']],v.pago?'1':'0')+selecao('forma','Forma',[['','—'],['Pix','Pix'],['Dinheiro','Dinheiro'],['Cartão','Cartão'],['Transferência','Transferência']],v.forma||'')+'</div>'+
+    campo('data','Data da consulta',v.data,'date')+
+    '<label class="fl">Horário<select data-f="hora">'+opcoesHora(p0,d,v.data,v.hora,c?c.id:undefined)+'</select></label>'+
+    campo('hora2','Ou digite outro horário (encaixe)',v.hora2||'','time')+
+    '<div class="r2">'+selecao('tipo','Tipo',Object.keys(AG_TIPOS).map(k=>[k,AG_TIPOS[k]]),v.tipo)+selecao('status','Situação',Object.keys(AG_STATUS).map(k=>[k,AG_STATUS[k][0]]),v.status)+'</div>'+
     '<label class="fl">Observações<textarea data-f="obs" rows="2">'+esc(v.obs||'')+'</textarea></label>'+
     (c?'<div class="acs"><button type="button" class="b alt" data-a="zap">WhatsApp</button><button type="button" class="b alt" data-a="del" style="color:var(--err);border-color:var(--err)">Excluir</button></div>':'');
-  const r=await caixa({titulo:c?'Consulta':'Nova consulta',sub:p0.nome,html:html,ok:'Salvar',semEnter:true,semFoco:!!c,
+  const r=await caixa({titulo:c?'Consulta':'Nova consulta',sub:p0.nome+' · '+resumoHor(p0),html:html,ok:'Salvar',semEnter:true,semFoco:!!c||!!horaIni,
+    mudou:(f,ov)=>{
+      if(f!=='data')return;
+      const dt=ov.querySelector('[data-f="data"]').value,sel=ov.querySelector('[data-f="hora"]');
+      if(dt)sel.innerHTML=opcoesHora(p0,ag.get(),dt,sel.value,c?c.id:undefined);
+    },
     acao:(a,ler,fim)=>{
-      if(a==='zap'){const x=ler();if(!zap({pac:x.pac,tel:x.tel,data:x.data,hora:x.hora},p0))toast('Informe um telefone com DDD.')}
+      if(a==='zap'){const x=ler();if(!zap({pac:x.pac,tel:x.tel,data:x.data,hora:x.hora2||x.hora},p0))toast('Informe um telefone com DDD.')}
       else if(a==='del'){confirmar('Excluir consulta?','Essa ação não pode ser desfeita.','Excluir').then(ok=>{if(ok)fim({__del:1})})}
     }});
   if(!r)return null;
   if(r.__del){const dd=ag.get();dd.cons=dd.cons.filter(x=>x.id!==c.id);ag.set(dd);toast('Consulta excluída.');return true}
-  const nova={id:c?c.id:uid(),prof:profId,data:r.data,hora:r.hora,dur:c?c.dur:30,pac:r.pac.trim(),tel:r.tel.trim(),
-    tipo:r.tipo,valor:numBr(r.valor),status:r.status,pago:r.pago==='1',forma:r.forma,obs:r.obs.trim()};
-  if(!nova.pac){await avisar('Falta o nome','Digite o nome do paciente.');return formConsulta(c,pidTela,data,nova)}
-  if(!nova.data||!nova.hora){await avisar('Falta data ou hora','Preencha a data e a hora da consulta.');return formConsulta(c,pidTela,data,nova)}
+  const nova={id:c?c.id:uid(),prof:profId,data:r.data,hora:(r.hora2||r.hora||'').trim(),dur:+p0.slot||30,pac:r.pac.trim(),tel:r.tel.trim(),
+    tipo:r.tipo,status:r.status,obs:r.obs.trim()};
+  const reabrir=Object.assign({},nova,{hora2:r.hora2});
+  if(!nova.pac){await avisar('Falta o nome','Digite o nome do paciente.');return formConsulta(c,pidTela,data,reabrir)}
+  if(!nova.data){await avisar('Falta a data','Escolha a data da consulta.');return formConsulta(c,pidTela,data,reabrir)}
+  if(!nova.hora){await avisar('Falta o horário','Escolha um horário da lista ou digite outro.');return formConsulta(c,pidTela,data,reabrir)}
   const dd=ag.get();
   if(ativa(nova)){
-    const choque=dd.cons.find(x=>x.id!==nova.id&&x.prof===nova.prof&&x.data===nova.data&&ativa(x)&&x.hora===nova.hora);
-    if(choque&&!(await confirmar('Horário ocupado','Já existe consulta de '+(choque.pac||'outro paciente')+' às '+choque.hora+'. Agendar mesmo assim?','Agendar mesmo assim')))return formConsulta(c,pidTela,data,nova);
+    const tem=p0.hor&&Object.keys(p0.hor).length;
+    if(tem&&agSlots(p0,nova.data).indexOf(nova.hora)<0&&!(c&&c.data===nova.data&&c.hora===nova.hora)){
+      if(!(await confirmar('Fora do horário de atendimento',p0.nome+' não atende em '+dataLonga(nova.data)+' às '+nova.hora+'. Agendar mesmo assim (encaixe)?','Agendar mesmo assim')))
+        return formConsulta(c,pidTela,data,reabrir);
+    }
+    const passo=+p0.slot||30;
+    const choque=dd.cons.find(x=>x.id!==nova.id&&x.prof===nova.prof&&x.data===nova.data&&ativa(x)&&Math.abs(toMin(x.hora)-toMin(nova.hora))<passo);
+    if(choque&&!(await confirmar('Horário ocupado','Já existe consulta de '+(choque.pac||'outro paciente')+' às '+choque.hora+'. Agendar mesmo assim?','Agendar mesmo assim')))
+      return formConsulta(c,pidTela,data,reabrir);
   }
   dd.cons=dd.cons.filter(x=>x.id!==nova.id).concat(nova);ag.set(dd);
   toast('Consulta salva.');
@@ -458,17 +519,24 @@ async function formConsulta(c,pidTela,data,pre){
 }
 
 /* ---- formulário de agenda do profissional ---- */
-async function formProf(p){
+async function formProf(p,pre){
   const d=ag.get();
   const cores=Object.keys(AG_CORES);
-  const v=p||{nome:'',esp:'',dur:30,valor:0,cor:AG_CORES[cores[d.profs.length%cores.length]]};
+  const v=pre||(p?{nome:p.nome,esp:p.esp,hor:p.hor||horPadrao(),slot:p.slot||p.dur||30,pausa:p.pausa||{a:'',b:''},cor:p.cor}:
+    {nome:'',esp:'',hor:horPadrao(),slot:30,pausa:{a:'',b:''},cor:AG_CORES[cores[d.profs.length%cores.length]]});
   const corNome=cores.find(k=>AG_CORES[k]===v.cor)||'Azul';
+  const dias=AG_ORDEM.map(w=>{
+    const h=(v.hor||{})[w];
+    return '<div class="hr"><label class="ck"><input type="checkbox" data-f="d'+w+'"'+(h?' checked':'')+'>'+AG_DIAS[w]+'</label>'+
+      '<input type="time" data-f="a'+w+'" value="'+(h?h.a:'08:00')+'"><span>às</span><input type="time" data-f="b'+w+'" value="'+(h?h.b:'12:00')+'"></div>';
+  }).join('');
   const html=
     campo('nome','Nome do profissional',v.nome,'text','placeholder="Ex: Dra. Ana" autocapitalize="words"')+
     campo('esp','Especialidade',v.esp,'text','list="esps" placeholder="Ex: Geriatra"')+
     '<datalist id="esps"><option value="Psiquiatra"><option value="Psicólogo(a)"><option value="Geriatra"></datalist>'+
-    campo('valor','Valor padrão (R$)',String(v.valor||'').replace('.',','),'text','inputmode="decimal" placeholder="0,00"')+
-    selecao('cor','Cor da agenda',cores.map(k=>[k,k]),corNome)+
+    '<label class="fl">Dias e horários de atendimento</label>'+dias+
+    '<label class="fl">Pausa (almoço) — opcional</label><div class="hr"><input type="time" data-f="pa" value="'+esc(v.pausa.a||'')+'"><span>às</span><input type="time" data-f="pb" value="'+esc(v.pausa.b||'')+'"></div>'+
+    '<div class="r2">'+selecao('slot','Duração de cada consulta',AG_SLOTS.map(m=>[m,m+' min']),v.slot)+selecao('cor','Cor da agenda',cores.map(k=>[k,k]),corNome)+'</div>'+
     (p?'<div class="acs"><button type="button" class="b alt" data-a="del" style="color:var(--err);border-color:var(--err)">Excluir esta agenda</button></div>':'');
   const r=await caixa({titulo:p?'Editar agenda':'Nova agenda',html:html,ok:'Salvar',semEnter:true,semFoco:!!p,
     acao:(a,ler,fim)=>{
@@ -478,8 +546,22 @@ async function formProf(p){
   if(!r)return null;
   const dd=ag.get();
   if(r.__del){dd.profs=dd.profs.filter(x=>x.id!==p.id);dd.cons=dd.cons.filter(x=>x.prof!==p.id);ag.set(dd);toast('Agenda excluída.');return 'excluida'}
-  if(!r.nome.trim()){await avisar('Falta o nome','Digite o nome do profissional.');return null}
-  const novo={id:p?p.id:uid(),nome:r.nome.trim(),esp:r.esp.trim(),dur:p?p.dur:30,valor:numBr(r.valor),cor:AG_CORES[r.cor]||'#1760c4'};
+  const hor={};let erro='';
+  AG_ORDEM.forEach(w=>{
+    if(r['d'+w]!=='1')return;
+    const a=r['a'+w],b=r['b'+w];
+    if(!a||!b||toMin(b)<=toMin(a)){erro=erro||'Em '+AG_DIAS[w]+', o horário final precisa ser depois do inicial.';return}
+    hor[w]={a:a,b:b};
+  });
+  const pausa={a:r.pa||'',b:r.pb||''};
+  if(!erro&&(pausa.a||pausa.b)&&(!pausa.a||!pausa.b||toMin(pausa.b)<=toMin(pausa.a)))erro='A pausa precisa ter início e fim, com o fim depois do início.';
+  const volta={nome:r.nome,esp:r.esp,hor:hor,slot:+r.slot||30,pausa:pausa,cor:AG_CORES[r.cor]||'#1760c4'};
+  if(!r.nome.trim()){await avisar('Falta o nome','Digite o nome do profissional.');return formProf(p,volta)}
+  if(erro){await avisar('Confira os horários',erro);
+    /* mantém os dias marcados para o usuário corrigir */
+    AG_ORDEM.forEach(w=>{if(r['d'+w]==='1'&&!volta.hor[w])volta.hor[w]={a:r['a'+w]||'08:00',b:r['b'+w]||'12:00'}});
+    return formProf(p,volta)}
+  const novo={id:p?p.id:uid(),nome:r.nome.trim(),esp:r.esp.trim(),dur:volta.slot,slot:volta.slot,hor:hor,pausa:pausa,cor:volta.cor};
   dd.profs=p?dd.profs.map(x=>x.id===p.id?novo:x):dd.profs.concat(novo);
   ag.set(dd);toast(p?'Agenda atualizada.':'Agenda criada.');
   return novo;
@@ -498,8 +580,8 @@ function abrirBackupAg(){
   $('bkd').onclick=()=>baixar('backup-agendas-'+hojeIso()+'.json',new Blob([JSON.stringify(ag.get())],{type:'application/json'}));
   $('bkc').onclick=()=>{
     const dd=ag.get(),q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"',nomeP=id=>(dd.profs.find(x=>x.id===id)||{}).nome||'';
-    const L=[['Data','Hora','Profissional','Paciente','Telefone','Tipo','Valor','Situação','Pago','Forma','Observações']].concat(
-      dd.cons.slice().sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora)).map(c=>[brD(c.data),c.hora,nomeP(c.prof),c.pac,'="'+String(c.tel||'').replace(/\D/g,'')+'"',AG_TIPOS[c.tipo]||c.tipo,String(valorCons(c)).replace('.',','),(AG_STATUS[c.status]||[c.status])[0],c.pago?'Sim':'Não',c.forma||'',c.obs||'']));
+    const L=[['Data','Hora','Profissional','Paciente','Telefone','Tipo','Situação','Observações']].concat(
+      dd.cons.slice().sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora)).map(c=>[brD(c.data),c.hora,nomeP(c.prof),c.pac,'="'+String(c.tel||'').replace(/\D/g,'')+'"',AG_TIPOS[c.tipo]||c.tipo,(AG_STATUS[c.status]||[c.status])[0],c.obs||'']));
     baixar('consultas-'+hojeIso()+'.csv',new Blob(['\ufeff'+L.map(r=>r.map(q).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'}));
   };
   $('bkr').onclick=()=>$('bkf').click();
