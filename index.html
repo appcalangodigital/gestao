@@ -53,6 +53,8 @@ input[type=text]{flex:1;min-width:0;padding:13px;border-radius:12px;border:1px s
 .ac{display:flex;flex-wrap:wrap;gap:2px 14px;margin-top:2px}
 .qty .qn{min-width:40px;background:none;border:0;font:700 1.3rem system-ui,sans-serif;color:var(--sky);cursor:pointer}
 .item.zero{opacity:.55}
+.st{display:inline-block;margin-top:4px;padding:3px 10px;border-radius:999px;font-size:.78rem;font-weight:700;color:#fff;background:#8a8f99}
+.st.v{background:#b3261e}.st.a{background:#e08a00}.st.o{background:#1f7a4d}.st.n{background:#6b7a99}
 .tot{display:flex;justify-content:space-between;font-weight:700;margin-bottom:6px}
 .ok{color:var(--ok)}.err{color:var(--err)}.mut{color:var(--mut)}
 .dif{font-weight:700;text-align:right;min-width:92px}
@@ -123,7 +125,9 @@ label.chk{display:flex;gap:8px;align-items:center;margin:10px 0;color:var(--mut)
 /* ===== Módulos: para incluir um novo botão na tela inicial, adicione um item aqui ===== */
 const MODULES=[
   {id:'estoque',titulo:'Estoque',icone:'📦',abrir:()=>abrirEstoque()},
-  {id:'agendas',titulo:'Agendas',icone:'🗓️',abrir:()=>abrirAgendas()}
+  {id:'agendas',titulo:'Agendas',icone:'🗓️',abrir:()=>abrirAgendas()},
+  {id:'documentos',titulo:'Documentos',icone:'📁',abrir:()=>abrirDocs()},
+  {id:'financeiro',titulo:'Financeiro',icone:'💲',abrir:()=>abrirFin()}
 ];
 const $=id=>document.getElementById(id);
 const app=$('app');
@@ -138,7 +142,7 @@ function dlgFecha(reg){
   if(!dlgPilha.length)setTimeout(()=>{if(!dlgPilha.length&&dlgEntrada){dlgEntrada=false;dlgIgnorar++;history.back()}},0);
 }
 
-const EM_BREVE=[1,2,3];
+const EM_BREVE=[1];
 function inicio(){
   if(limpar){limpar();limpar=null}
   voltaAtual=null;
@@ -420,6 +424,229 @@ function abrirContagem(){
   };
   render();
   carregar();
+}
+
+/* ===== Tabelas sincronizadas com a planilha (Documentos e Financeiro) ===== */
+const tempo=(p,ms)=>Promise.race([p,new Promise((_,rj)=>setTimeout(()=>rj(new Error('tempo')),ms))]);
+function tabela(nome,cols,cab,textCols){
+  const K='tab:'+nome;
+  const L=()=>store.get(K,[]);
+  const T={
+    busy:false,again:false,ok:false,
+    todos:()=>L().filter(r=>!r.apagado),
+    salvar(r){const l=L();r.atu=Date.now();r.apagado=0;const i=l.findIndex(x=>x.id===r.id);if(i>=0)l[i]=r;else l.push(r);store.set(K,l)},
+    apagar(id){const l=L();const i=l.findIndex(x=>x.id===id);if(i>=0){l[i].apagado=1;l[i].atu=Date.now();store.set(K,l)}},
+    async sync(){
+      if(T.busy){T.again=true;return T.ok}
+      T.busy=true;
+      try{
+        const d=await tempo(apiGet({action:'tab_listar',nome}),12000);
+        if(!d.ok)throw new Error(d.erro==='ação'?'atualize o script da planilha':(d.erro||'erro'));
+        const m={};
+        (d.linhas||[]).forEach(a=>{const o={};cols.forEach((c,i)=>o[c]=a[i]===undefined?'':a[i]);o.atu=Number(o.atu)||0;o.apagado=Number(o.apagado)?1:0;if(o.id!=='')m[o.id]=o});
+        L().forEach(o=>{const r=m[o.id];if(!r||o.atu>r.atu)m[o.id]=o});
+        const todos=Object.keys(m).map(k=>m[k]);
+        store.set(K,todos);
+        const r=await tempo(apiPost({acao:'tab_salvar',nome,cols,cab,textCols,linhas:todos.map(o=>cols.map(c=>o[c]==null?'':o[c]))}),15000);
+        if(!r.ok)throw new Error(r.erro||'erro');
+        T.ok=true;T.erro='';
+      }catch(e){T.ok=false;T.erro=e.message}
+      T.busy=false;
+      if(T.again){T.again=false;return T.sync()}
+      return T.ok;
+    }
+  };
+  return T;
+}
+async function marcaSync(T){
+  const e=$('sy');if(e)e.textContent='Sincronizando…';
+  const ok=await T.sync();
+  const f=$('sy');
+  if(f)f.innerHTML=ok?'<span class="ok">Sincronizado com a planilha.</span>':'<span class="err">Sem conexão com a planilha'+(T.erro==='atualize o script da planilha'?' (atualize o script)':'')+'.</span> Está salvo neste celular e será enviado na próxima vez.';
+  return ok;
+}
+const moeda=n=>'R$ '+(Math.round(n*100)/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const somaMeses=(s,n)=>{const d=dIso(s);d.setMonth(d.getMonth()+n);return isoD(d)};
+function baixarCSV(nomeArq,linhas){
+  const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\ufeff'+linhas.map(r=>r.map(q).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'}));
+  a.download=nomeArq;document.body.appendChild(a);a.click();a.remove();
+}
+const botaoExcluir=t=>'<button class="b alt wide" data-a="del" style="margin-top:8px">'+t+'</button>';
+const acaoExcluir=(a,ler,fim)=>{if(a==='del')fim({__del:'1'})};
+
+/* ===== Documentos ===== */
+const DOC_CATS=['Legalização','Saúde e higiene','Segurança','Trabalhista e fiscal','Atendimento','Outros'];
+/* [nome, onde emitir, categoria, renovar a cada (meses), não vence, observação] */
+const DOCS_PADRAO=[
+  ['Cartão CNPJ','Receita Federal','Legalização',0,1,'Manter o cadastro atualizado.'],
+  ['Contrato social e alterações','Junta Comercial (JUCEC)','Legalização',0,1,''],
+  ['Alvará de funcionamento','Agefis (Prefeitura de Fortaleza)','Legalização',0,0,'Confira a validade no próprio documento.'],
+  ['Licença sanitária','Vigilância Sanitária de Fortaleza (Cevisa)','Legalização',12,0,'Confira a validade no próprio documento.'],
+  ['Certificado de conformidade do Corpo de Bombeiros','Corpo de Bombeiros do Ceará (CBMCE)','Legalização',0,0,'Confira a validade no próprio certificado.'],
+  ['Inscrição no Conselho Municipal dos Direitos da Pessoa Idosa','CMDPI de Fortaleza','Legalização',0,0,'Confira a validade do certificado de inscrição.'],
+  ['Responsável técnico: registro no conselho e termo','Conselho profissional da área','Legalização',12,0,'Confirme a exigência na Portaria 791/2018 da Secretaria de Saúde de Fortaleza.'],
+  ['Plano de gerenciamento de resíduos (PGRSS)','Vigilância Sanitária','Saúde e higiene',12,0,'Confirme com a vigilância se é exigido.'],
+  ['Controle de pragas (dedetização)','Empresa contratada','Saúde e higiene',6,0,'Guarde o certificado da empresa.'],
+  ['Limpeza da caixa d’água','Empresa contratada','Saúde e higiene',6,0,'Guarde o certificado da empresa.'],
+  ['Manual de boas práticas e POPs da cozinha','Nutricionista responsável','Saúde e higiene',12,0,'Revisar todo ano.'],
+  ['Manutenção do ar-condicionado (PMOC)','Empresa de manutenção','Saúde e higiene',12,0,'Se o plano se aplicar ao local.'],
+  ['Recarga e inspeção dos extintores','Empresa de extintores','Segurança',12,0,'Confira o selo e a data de cada extintor.'],
+  ['Treinamento da brigada de incêndio','Empresa ou Corpo de Bombeiros','Segurança',12,0,''],
+  ['Laudo das instalações elétricas','Engenheiro eletricista','Segurança',0,0,'Defina a periodicidade com o profissional.'],
+  ['Seguro do imóvel e de responsabilidade civil','Seguradora','Segurança',12,0,'Renovar a apólice.'],
+  ['Certidão negativa federal (Receita e PGFN)','Receita Federal','Trabalhista e fiscal',6,0,'Confira a validade na certidão.'],
+  ['Certificado de regularidade do FGTS','Caixa Econômica Federal','Trabalhista e fiscal',1,0,'Confira a validade na certidão.'],
+  ['Certidão negativa de débitos trabalhistas (CNDT)','Justiça do Trabalho','Trabalhista e fiscal',6,0,'Confira a validade na certidão.'],
+  ['PGR e PCMSO (saúde e segurança do trabalho)','Médico do trabalho e técnico de segurança','Trabalhista e fiscal',12,0,'Inclui os exames (ASO) dos funcionários.'],
+  ['Contratos com as famílias','Cada responsável','Atendimento',12,0,'Use uma data geral para conferir as renovações.'],
+  ['Regimento interno e plano de atividades','Direção','Atendimento',12,0,'Revisar todo ano.']
+];
+const docs=tabela('Documentos',['id','nome','orgao','numero','cat','emi','val','nv','aviso','per','obs','atu','apagado'],
+  ['ID','Documento','Órgão ou onde emitir','Número','Categoria','Emissão','Validade','Não vence (1=sim)','Avisar (dias antes)','Renovar a cada (meses)','Observações','Atualizado (código)','Apagado (1=sim)'],[1,2,3,4,5,6,7,11]);
+let docsFiltro='todos';
+
+function semearDocs(){
+  if(store.get('tab:Documentos:semeado',0))return;
+  const l=store.get('tab:Documentos',[]),ids={};
+  l.forEach(x=>ids[x.id]=1);
+  DOCS_PADRAO.forEach((p,i)=>{const id='p'+(i+1);if(!ids[id])l.push({id,nome:p[0],orgao:p[1],numero:'',cat:p[2],emi:'',val:'',nv:p[4],aviso:30,per:p[3],obs:p[5],atu:1,apagado:0})});
+  store.set('tab:Documentos',l);store.set('tab:Documentos:semeado',1);
+}
+function docInfo(d){
+  if(Number(d.nv))return{k:'n',txt:'Não vence',ord:2e9};
+  if(!d.val)return{k:'s',txt:'Sem data de validade',ord:1e9};
+  const n=Math.round((dIso(d.val)-dIso(hojeIso()))/864e5),av=Number(d.aviso)||30;
+  if(n<0)return{k:'v',txt:'Vencido há '+plural(-n,'dia','dias'),ord:n};
+  if(n===0)return{k:'a',txt:'Vence hoje',ord:0};
+  if(n<=av)return{k:'a',txt:'Vence em '+plural(n,'dia','dias'),ord:n};
+  return{k:'o',txt:'Em dia · até '+brD(d.val),ord:n};
+}
+async function formDoc(d){
+  const novo=!d,v=d||{id:'d'+uid(),nome:'',orgao:'',numero:'',cat:'Outros',emi:'',val:'',nv:0,aviso:30,per:0,obs:''};
+  const r=await caixa({titulo:novo?'Novo documento':'Editar documento',html:
+    campo('nome','Documento',v.nome)+campo('orgao','Órgão ou onde emitir',v.orgao)+campo('numero','Número (opcional)',v.numero)+
+    selecao('cat','Categoria',DOC_CATS.map(c=>[c,c]),v.cat)+
+    '<div class="r2">'+campo('emi','Emissão',v.emi,'date')+campo('val','Validade',v.val,'date')+'</div>'+
+    '<label class="chk"><input type="checkbox" data-f="nv" '+(Number(v.nv)?'checked':'')+'> Este documento não vence</label>'+
+    '<div class="r2">'+campo('aviso','Avisar (dias antes)',v.aviso,'number','inputmode="numeric"')+campo('per','Renovar a cada (meses)',v.per||'','number','inputmode="numeric"')+'</div>'+
+    campo('obs','Observações',v.obs)+(novo?'':botaoExcluir('Excluir documento')),ok:'Salvar',acao:acaoExcluir});
+  if(!r)return false;
+  if(r.__del){if(await confirmar('Excluir documento?',v.nome,'Excluir')){docs.apagar(v.id);return true}return false}
+  if(!r.nome.trim()){await avisar('Falta o nome','Digite o nome do documento.');return false}
+  docs.salvar({id:v.id,nome:r.nome.trim(),orgao:r.orgao.trim(),numero:r.numero.trim(),cat:r.cat,emi:r.emi,val:r.nv==='1'?'':r.val,nv:r.nv==='1'?1:0,aviso:Math.max(0,parseInt(r.aviso,10)||30),per:Math.max(0,parseInt(r.per,10)||0),obs:r.obs.trim()});
+  return true;
+}
+async function renovarDoc(d){
+  const per=Number(d.per)||0;
+  const r=await caixa({titulo:'Renovar documento',sub:d.nome,html:'<div class="r2">'+campo('emi','Nova emissão',hojeIso(),'date')+campo('val','Nova validade',per?somaMeses(hojeIso(),per):'','date')+'</div>',ok:'Salvar'});
+  if(!r)return false;
+  if(!r.val){await avisar('Falta a validade','Informe a nova data de validade.');return false}
+  docs.salvar(Object.assign({},d,{emi:r.emi,val:r.val,nv:0}));
+  return true;
+}
+function abrirDocs(){
+  semearDocs();
+  telaModulo('Documentos','<div class="card"><div class="tot" id="dc"></div>'+
+    '<button class="b wide" id="dn" style="margin-top:4px">+ Novo documento</button>'+
+    '<div class="row" style="margin-top:8px"><button class="b alt" id="f1" style="flex:1">Todos</button><button class="b alt" id="f2" style="flex:1">Precisam de atenção</button></div>'+
+    '<div id="sy" class="sub" style="margin-top:8px"></div></div><div class="card" id="dl"></div>',inicio);
+  function pinta(){
+    if(!$('dl'))return;
+    const l=docs.todos().map(d=>({d,i:docInfo(d)})).sort((a,b)=>a.i.ord-b.i.ord||a.d.nome.localeCompare(b.d.nome));
+    const c=k=>l.filter(x=>x.i.k===k).length;
+    $('dc').innerHTML='<span class="err">Vencidos: '+c('v')+'</span><span style="color:#e08a00">A vencer: '+c('a')+'</span><span class="mut">Sem data: '+c('s')+'</span>';
+    $('f1').style.opacity=docsFiltro==='todos'?1:.55;$('f2').style.opacity=docsFiltro==='atencao'?1:.55;
+    const v=docsFiltro==='atencao'?l.filter(x=>'vas'.indexOf(x.i.k)>=0):l;
+    $('dl').innerHTML=v.length?v.map(x=>'<div class="item"><div class="info"><div class="nm">'+esc(x.d.nome)+'</div><div class="sub">'+esc([x.d.orgao,x.d.cat].filter(Boolean).join(' · '))+'</div>'+
+      '<span class="st '+x.i.k+'">'+esc(x.i.txt)+'</span><div class="ac"><button class="ed" data-r="'+x.d.id+'">renovar</button><button class="ed" data-e="'+x.d.id+'">editar</button></div></div></div>').join(''):'<span class="mut">Nada por aqui.</span>';
+  }
+  const depois=async f=>{if(await f){pinta();await marcaSync(docs);pinta()}};
+  $('dn').onclick=()=>depois(formDoc(null));
+  $('f1').onclick=()=>{docsFiltro='todos';pinta()};
+  $('f2').onclick=()=>{docsFiltro='atencao';pinta()};
+  $('dl').onclick=e=>{
+    const t=e.target.closest('button');if(!t)return;
+    const id=t.dataset.r||t.dataset.e,d=docs.todos().find(x=>x.id===id);if(!d)return;
+    depois(t.dataset.r?renovarDoc(d):formDoc(d));
+  };
+  pinta();
+  marcaSync(docs).then(pinta);
+}
+
+/* ===== Financeiro ===== */
+const FIN_CATS={
+  entrada:['Mensalidades','Matrículas','Outras entradas'],
+  saida:['Salários e encargos','Aluguel','Energia elétrica','Água','Internet e telefone','Alimentação','Material de limpeza','Material de atividades','Manutenção','Impostos e taxas','Outras saídas']
+};
+const FIN_FORMAS=[['','—'],['Pix','Pix'],['Dinheiro','Dinheiro'],['Cartão','Cartão'],['Transferência','Transferência'],['Boleto','Boleto']];
+const MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const fin=tabela('Financeiro',['id','tipo','data','desc','cat','valor','forma','sit','obs','atu','apagado'],
+  ['ID','Tipo','Data','Descrição','Categoria','Valor (R$)','Forma de pagamento','Situação','Observações','Atualizado (código)','Apagado (1=sim)'],[1,2,3,4,5,7,8,9]);
+let finMes=null;
+const nomeMes=ym=>MESES[Number(ym.slice(5,7))-1]+' de '+ym.slice(0,4);
+const mudaMes=(ym,n)=>{const d=new Date(Number(ym.slice(0,4)),Number(ym.slice(5,7))-1+n,1);return isoD(d).slice(0,7)};
+
+async function formFin(tipo,x){
+  const novo=!x,v=x||{id:'f'+uid(),tipo,data:hojeIso(),desc:'',cat:'',valor:'',forma:'',sit:'Realizado',obs:''};
+  tipo=v.tipo;const ent=tipo==='entrada',cats=FIN_CATS[tipo];
+  const r=await caixa({titulo:(novo?'Nova ':'Editar ')+(ent?'entrada':'saída'),html:
+    campo('data','Data',v.data,'date')+campo('desc','Descrição',v.desc)+
+    selecao('cat','Categoria',cats.map(c=>[c,c]),v.cat||(ent?cats[0]:cats[cats.length-1]))+
+    campo('valor','Valor (R$)',v.valor===''?'':String(v.valor).replace('.',','),'text','inputmode="decimal" placeholder="0,00"')+
+    selecao('forma','Forma de pagamento',FIN_FORMAS,v.forma)+
+    selecao('sit','Situação',[['Realizado',ent?'Recebido':'Pago'],['Pendente',ent?'A receber':'A pagar']],v.sit)+
+    campo('obs','Observações',v.obs)+(novo?'':botaoExcluir('Excluir lançamento')),ok:'Salvar',acao:acaoExcluir});
+  if(!r)return false;
+  if(r.__del){if(await confirmar('Excluir lançamento?',v.desc||v.cat,'Excluir')){fin.apagar(v.id);return true}return false}
+  const valor=numBr(r.valor);
+  if(!r.data){await avisar('Falta a data','Informe a data.');return false}
+  if(!(valor>0)){await avisar('Falta o valor','Digite um valor maior que zero.');return false}
+  fin.salvar({id:v.id,tipo,data:r.data,desc:r.desc.trim()||r.cat,cat:r.cat,valor,forma:r.forma,sit:r.sit,obs:r.obs.trim()});
+  finMes=r.data.slice(0,7);
+  return true;
+}
+function abrirFin(){
+  if(!finMes)finMes=hojeIso().slice(0,7);
+  telaModulo('Financeiro','<div class="card"><div class="row" style="justify-content:space-between"><button class="b alt" id="mp" style="width:52px;padding:10px">‹</button><b id="mn"></b><button class="b alt" id="mq" style="width:52px;padding:10px">›</button></div>'+
+    '<div class="tot" style="margin-top:12px"><span class="ok" id="te"></span><span class="err" id="ts"></span></div>'+
+    '<div class="tot"><span id="sd2"></span></div><div class="sub" id="pd"></div>'+
+    '<div class="row" style="margin-top:10px"><button class="b" id="ne" style="flex:1">+ Entrada</button><button class="b" id="ns" style="flex:1;background:#b3261e">− Saída</button></div>'+
+    '<div id="sy" class="sub" style="margin-top:8px"></div></div>'+
+    '<div class="card" id="fl"></div><div class="card" id="fc"></div>'+
+    '<button class="b alt wide" id="fx">Baixar planilha do mês (CSV)</button>',inicio);
+  const doMes=()=>fin.todos().filter(x=>String(x.data).slice(0,7)===finMes);
+  function pinta(){
+    if(!$('fl'))return;
+    const l=doMes().sort((a,b)=>String(b.data).localeCompare(String(a.data)));
+    const soma=(t,s)=>l.filter(x=>x.tipo===t&&x.sit===s).reduce((a,x)=>a+Number(x.valor),0);
+    const e=soma('entrada','Realizado'),s=soma('saida','Realizado'),pr=soma('entrada','Pendente'),pp=soma('saida','Pendente');
+    $('mn').textContent=nomeMes(finMes);
+    $('te').textContent='Entradas: '+moeda(e);$('ts').textContent='Saídas: '+moeda(s);
+    $('sd2').innerHTML='Saldo do mês: <b class="'+(e-s>=0?'ok':'err')+'">'+moeda(e-s)+'</b>';
+    $('pd').textContent=(pr||pp)?'Pendentes: a receber '+moeda(pr)+' · a pagar '+moeda(pp):'';
+    $('fl').innerHTML=l.length?l.map(x=>{const en=x.tipo==='entrada';
+      return '<div class="item"><div class="info"><div class="nm">'+esc(x.desc||x.cat)+'</div><div class="sub">'+esc(brD(x.data).slice(0,5)+' · '+x.cat+(x.forma?' · '+x.forma:''))+(x.sit==='Pendente'?' · <b style="color:#e08a00">'+(en?'a receber':'a pagar')+'</b>':'')+'</div>'+
+      '<div class="ac"><button class="ed" data-e="'+x.id+'">editar</button></div></div><div class="dif '+(en?'ok':'err')+'">'+(en?'+':'−')+moeda(Number(x.valor))+'</div></div>'}).join(''):'<span class="mut">Nenhum lançamento neste mês.</span>';
+    const por={};l.filter(x=>x.sit==='Realizado').forEach(x=>{const k=x.tipo+'|'+x.cat;por[k]=(por[k]||0)+Number(x.valor)});
+    const ks=Object.keys(por).sort((a,b)=>por[b]-por[a]);
+    $('fc').innerHTML=ks.length?'<div class="nm" style="margin-bottom:6px">Por categoria</div>'+ks.map(k=>'<div class="tot" style="font-weight:600"><span>'+esc(k.split('|')[1])+'</span><span class="'+(k.startsWith('entrada')?'ok':'err')+'">'+moeda(por[k])+'</span></div>').join(''):'';
+  }
+  const depois=async f=>{if(await f){pinta();await marcaSync(fin);pinta()}};
+  $('mp').onclick=()=>{finMes=mudaMes(finMes,-1);pinta()};
+  $('mq').onclick=()=>{finMes=mudaMes(finMes,1);pinta()};
+  $('ne').onclick=()=>depois(formFin('entrada',null));
+  $('ns').onclick=()=>depois(formFin('saida',null));
+  $('fl').onclick=e=>{const t=e.target.closest('button');if(!t||!t.dataset.e)return;const x=fin.todos().find(y=>y.id===t.dataset.e);if(x)depois(formFin(x.tipo,x))};
+  $('fx').onclick=()=>{
+    const l=doMes().sort((a,b)=>String(a.data).localeCompare(String(b.data)));
+    if(!l.length){toast('Nada para baixar neste mês.');return}
+    baixarCSV('financeiro-'+finMes+'.csv',[['Financeiro',nomeMes(finMes)],[],['Data','Tipo','Descrição','Categoria','Valor','Forma','Situação','Observações']]
+      .concat(l.map(x=>[brD(x.data),x.tipo==='entrada'?'Entrada':'Saída',x.desc,x.cat,String(x.valor).replace('.',','),x.forma,x.sit==='Pendente'?(x.tipo==='entrada'?'A receber':'A pagar'):(x.tipo==='entrada'?'Recebido':'Pago'),x.obs])));
+  };
+  pinta();
+  marcaSync(fin).then(pinta);
 }
 
 /* ===== Agendas dos profissionais ===== */
