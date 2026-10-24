@@ -105,6 +105,8 @@ label.chk{display:flex;gap:8px;align-items:center;margin:10px 0;color:var(--mut)
 .dlg .hr input[type=time]{flex:1;min-width:0;margin:0;padding:10px 6px;font-size:.9rem;text-align:center}
 .dlg .hr label.ck{display:flex;align-items:center;gap:7px;flex:0 0 66px;margin:0;font-weight:700;font-size:.9rem;color:var(--ink)}
 .dlg input[type=checkbox]{display:inline-block;width:20px;height:20px;margin:0;padding:0;accent-color:#1760c4}
+.agst{font-size:.8rem;text-align:center;padding:10px 4px 2px;cursor:pointer;color:var(--mut)}
+.agst.ok{color:#1f7a4d}.agst.err{color:#b3261e}
 </style>
 </head>
 <body>
@@ -122,7 +124,7 @@ const $=id=>document.getElementById(id);
 const app=$('app');
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const store={get(k,d){try{return JSON.parse(localStorage.getItem('calango:'+k))||d}catch(e){return d}},set(k,v){try{localStorage.setItem('calango:'+k,JSON.stringify(v))}catch(e){}}};
-let limpar=null,voltaAtual=null,porVoltar=false;
+let limpar=null,voltaAtual=null,porVoltar=false,agRe=null;
 
 const EM_BREVE=[['📅','Vencimentos'],['💲','Financeiro'],['📁','Documentos']];
 function inicio(){
@@ -134,6 +136,7 @@ function inicio(){
   app.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>MODULES.find(m=>m.id===b.dataset.m).abrir());
 }
 function telaModulo(t,html,volta){
+  agRe=null;
   if(limpar){limpar();limpar=null}
   voltaAtual=volta||inicio;
   if(!porVoltar)history.pushState({t:1},'');
@@ -361,6 +364,101 @@ function zap(c,p){
   return true;
 }
 
+/* ---- sincronização com a planilha do Google ---- */
+const agFila={
+  vazia:()=>({profs:{},cons:{},delProfs:[],delCons:[]}),
+  get(){const f=store.get('agfila',null);return f&&f.profs&&f.cons&&f.delProfs&&f.delCons?f:agFila.vazia()},
+  set(f){store.set('agfila',f)},
+  total(f){return Object.keys(f.profs).length+Object.keys(f.cons).length+f.delProfs.length+f.delCons.length},
+  upProf(p){const f=agFila.get();f.profs[p.id]=p;f.delProfs=f.delProfs.filter(x=>x!==p.id);agFila.set(f)},
+  upCons(c){const f=agFila.get();f.cons[c.id]=c;f.delCons=f.delCons.filter(x=>x!==c.id);agFila.set(f)},
+  delProf(id){const f=agFila.get();delete f.profs[id];Object.keys(f.cons).forEach(k=>{if(f.cons[k].prof===id)delete f.cons[k]});if(f.delProfs.indexOf(id)<0)f.delProfs.push(id);agFila.set(f)},
+  delCons(id){const f=agFila.get();delete f.cons[id];if(f.delCons.indexOf(id)<0)f.delCons.push(id);agFila.set(f)},
+  /* devolve à fila o que não conseguiu ser enviado, sem desfazer alterações mais novas */
+  junta(v){
+    const f=agFila.get();
+    Object.keys(v.profs).forEach(k=>{if(!f.profs[k]&&f.delProfs.indexOf(k)<0)f.profs[k]=v.profs[k]});
+    Object.keys(v.cons).forEach(k=>{if(!f.cons[k]&&f.delCons.indexOf(k)<0&&f.delProfs.indexOf(v.cons[k].prof)<0)f.cons[k]=v.cons[k]});
+    v.delProfs.forEach(k=>{if(f.delProfs.indexOf(k)<0&&!f.profs[k])f.delProfs.push(k)});
+    v.delCons.forEach(k=>{if(f.delCons.indexOf(k)<0&&!f.cons[k])f.delCons.push(k)});
+    agFila.set(f);
+  }
+};
+const agPayProf=p=>({id:p.id,nome:p.nome,esp:p.esp||'',zap:p.zap||'',cor:p.cor||''});
+const agPayCons=c=>({id:c.id,prof:c.prof,data:c.data,hora:c.hora,pac:c.pac||'',tel:c.tel||'',tipo:c.tipo||'particular',status:c.status||'agendada',obs:c.obs||''});
+/* o que veio da planilha + o que ainda está esperando para ser enviado */
+function agAplicaFila(g,f){
+  return{
+    profs:g.profs.filter(p=>f.delProfs.indexOf(p.id)<0&&!f.profs[p.id]).concat(Object.keys(f.profs).map(k=>f.profs[k])),
+    cons:g.cons.filter(c=>f.delCons.indexOf(c.id)<0&&f.delProfs.indexOf(c.prof)<0&&!f.cons[c.id]).concat(Object.keys(f.cons).map(k=>f.cons[k]))
+  };
+}
+let agBusy=false,agUltimo=0,agEstado={s:'nunca'};
+const agPend=()=>agFila.total(agFila.get());
+const agStatusHtml=()=>'<div class="agst" id="agst"></div>';
+function agPinta(){
+  const n=agPend(),e=agEstado;let t,c='';
+  if(e.s==='sync')t='🔄 Sincronizando com a planilha…';
+  else if(e.s==='semsenha')t='☁️ Toque aqui para ligar à planilha (senha)';
+  else if(e.s==='erro'){
+    c='err';
+    if(e.m==='senha')t='⚠️ Senha da planilha incorreta · toque para corrigir';
+    else if(e.m==='acao')t='⚠️ O script da planilha ainda não tem as agendas · atualize o script e toque aqui';
+    else t='⚠️ Sem conexão com a planilha'+(n?' · '+plural(n,'alteração pendente','alterações pendentes'):'')+' · toque para tentar de novo';
+  }
+  else if(n)t='⏳ '+plural(n,'alteração','alterações')+' para enviar · toque para sincronizar';
+  else if(e.s==='ok'){t='☁️ Sincronizado com a planilha às '+e.t;c='ok'}
+  else t='☁️ Toque para sincronizar com a planilha';
+  document.querySelectorAll('.agst').forEach(el=>{el.textContent=t;el.className='agst '+c;el.onclick=agToque});
+}
+function agToque(){
+  if(agEstado.s==='erro'&&agEstado.m==='senha')cfg(true).then(c=>{if(c)agSync(true)});
+  else agSync(true);
+}
+async function agSync(manual){
+  if(agBusy)return false;
+  const c0=store.get('planilha',{});
+  if(!c0.token&&!manual){agEstado={s:'semsenha'};agPinta();return false}
+  agBusy=true;agEstado={s:'sync'};agPinta();
+  let ok=false,mudou=false,msg='';
+  try{
+    if(!store.get('agsync2',0)){
+      /* primeira vez: envia para a planilha o que já existe neste celular */
+      const l=ag.get();l.profs.forEach(p=>agFila.upProf(p));l.cons.forEach(c=>agFila.upCons(c));
+    }
+    const f=agFila.get();
+    if(agFila.total(f)){
+      agFila.set(agFila.vazia());
+      try{
+        const r=await apiPost({acao:'ag_lote',profs:Object.keys(f.profs).map(k=>agPayProf(f.profs[k])),cons:Object.keys(f.cons).map(k=>agPayCons(f.cons[k])),delProfs:f.delProfs,delCons:f.delCons});
+        if(!r.ok)throw new Error(r.erro||'erro');
+      }catch(e){agFila.junta(f);throw e}
+    }
+    const g=await apiGet({action:'ag_listar'});
+    if(!g.ok)throw new Error(g.erro||'erro');
+    const novo=agAplicaFila({profs:g.profs||[],cons:g.cons||[]},agFila.get());
+    mudou=JSON.stringify(novo)!==JSON.stringify(ag.get());
+    ag.set(novo);store.set('agsync2',Date.now());
+    ok=true;
+  }catch(e){
+    msg=String(e&&e.message||'');
+    if(msg==='ação'||/forEach|undefined|null/.test(msg))msg='acao';
+  }
+  agBusy=false;agUltimo=Date.now();
+  if(ok){const t=new Date();agEstado={s:'ok',t:String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0')}}
+  else agEstado={s:'erro',m:msg};
+  agPinta();
+  if(ok&&mudou&&agRe)agRe();
+  if(ok&&agPend())setTimeout(()=>agSync(),300);
+  return ok;
+}
+function agIniciar(re){
+  agRe=re;agPinta();
+  if(agPend()||!store.get('agsync2',0)||Date.now()-agUltimo>30000)agSync();
+}
+setInterval(()=>{if(agRe&&!document.hidden)agSync()},60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&agRe)agSync()});
+
 /* ---- tela das agendas ---- */
 function abrirAgendas(){
   try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
@@ -369,49 +467,20 @@ function abrirAgendas(){
   const cards=d.profs.map(p=>{
     const l=d.cons.filter(c=>c.prof===p.id&&c.data===h&&ativa(c));
     const conf=l.filter(c=>c.status==='agendada').length;
-    return '<button class="pc" data-p="'+p.id+'" style="border-left:6px solid '+p.cor+'"><div class="pn">'+esc(p.nome)+'</div><div class="ps">'+esc(p.esp||'')+'</div><div class="ps">'+esc(resumoHor(p))+'</div>'+
+    return '<button class="pc" data-p="'+p.id+'" style="border-left:6px solid '+p.cor+'"><div class="pn">'+esc(p.nome)+'</div><div class="ps">'+esc(p.esp||'')+'</div>'+
       '<div class="pm">Hoje: <b>'+plural(l.length,'consulta','consultas')+'</b>'+(conf?' · <span class="err">'+conf+' a confirmar</span>':'')+'</div></button>';
   }).join('');
   telaModulo('Agendas',
-    '<div class="card"><div class="tot"><span>Hoje, '+dataLonga(h)+'</span><span>'+plural(totalHoje,'consulta','consultas')+'</span></div><button class="b wide" id="agh" style="margin-top:4px">Ver hoje (todos)</button></div>'+
+    '<div class="card"><div class="tot"><span>Hoje, '+dataLonga(h)+'</span><span>'+plural(totalHoje,'consulta','consultas')+'</span></div><button class="b wide" id="agh" style="margin-top:4px">Ver hoje (todos)</button>'+agStatusHtml()+'</div>'+
     (cards||'<div class="card mut">Nenhuma agenda ainda. Toque em “Nova agenda” para criar a do primeiro profissional.</div>')+
     '<button class="b alt wide" id="agn">+ Nova agenda</button>'+
-    '<div class="grid" style="margin-top:16px"><button class="tile" id="agb" style="grid-column:1/-1"><span class="ic">💾</span>Backup e exportar</button></div>',inicio);
+    '<div class="grid" style="margin-top:16px"><button class="tile" id="age"><span class="ic">📤</span>Enviar agendas</button><button class="tile" id="agb"><span class="ic">💾</span>Backup e exportar</button></div>',inicio);
   app.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>abrirDia(b.dataset.p,hojeIso()));
   $('agh').onclick=()=>abrirDia(null,hojeIso());
   $('agn').onclick=async()=>{const p=await formProf(null);if(p)refazer(abrirAgendas)};
+  $('age').onclick=()=>abrirEnvios(0);
+  agIniciar(()=>refazer(abrirAgendas));
   $('agb').onclick=abrirBackupAg;
-}
-
-/* ---- horários de atendimento ---- */
-const AG_ORDEM=[1,2,3,4,5,6,0];
-const AG_SLOTS=[15,20,30,40,45,60];
-const horPadrao=()=>{const h={};[1,2,3,4,5].forEach(w=>h[w]={a:'08:00',b:'12:00'});return h};
-function agSlots(p,data){
-  const h=(p.hor||{})[dIso(data).getDay()];
-  if(!h)return [];
-  const passo=+p.slot||30,a=toMin(h.a),b=toMin(h.b);
-  const pi=p.pausa&&p.pausa.a?toMin(p.pausa.a):-1,pf=p.pausa&&p.pausa.b?toMin(p.pausa.b):-1;
-  const r=[];
-  for(let s=a;s+passo<=b;s+=passo){
-    if(pi>=0&&pf>pi&&s<pf&&s+passo>pi)continue;
-    r.push(hm(s));
-  }
-  return r;
-}
-function resumoHor(p){
-  const dias=AG_ORDEM.filter(w=>p.hor&&p.hor[w]);
-  if(!dias.length)return 'Horários não definidos';
-  const iguais=dias.every(w=>p.hor[w].a===p.hor[dias[0]].a&&p.hor[w].b===p.hor[dias[0]].b);
-  return dias.map(w=>AG_DIAS[w]).join(', ')+(iguais?' · '+p.hor[dias[0]].a+' às '+p.hor[dias[0]].b:' · horários variados');
-}
-function opcoesHora(p,dd,dt,atual,ignId){
-  const passo=+p.slot||30,sl=agSlots(p,dt);
-  const ocup=h=>dd.cons.some(x=>x.id!==ignId&&x.prof===p.id&&x.data===dt&&ativa(x)&&toMin(x.hora)>=toMin(h)&&toMin(x.hora)<toMin(h)+passo);
-  const ops=sl.map(h=>'<option value="'+h+'"'+(h===atual?' selected':'')+(ocup(h)?' disabled':'')+'>'+h+(ocup(h)?' — ocupado':'')+'</option>');
-  if(atual&&sl.indexOf(atual)<0)ops.unshift('<option value="'+esc(atual)+'" selected>'+esc(atual)+'</option>');
-  if(!ops.length)return '<option value="">'+(p.hor&&Object.keys(p.hor).length?'Sem atendimento neste dia':'Horários não definidos')+'</option>';
-  return '<option value="">Escolha o horário…</option>'+ops.join('');
 }
 
 /* ---- dia (de um profissional ou de todos) ---- */
@@ -419,40 +488,31 @@ function abrirDia(pid,data){
   const d=ag.get(),p=pid?d.profs.find(x=>x.id===pid):null;
   if(pid&&!p){refazer(abrirAgendas);return}
   const filtra=c=>!pid||c.prof===pid;
-  const lista=d.cons.filter(c=>filtra(c)&&c.data===data);
+  const lista=d.cons.filter(c=>filtra(c)&&c.data===data).sort((a,b)=>a.hora.localeCompare(b.hora));
   const seg=somaDias(data,-((dIso(data).getDay()+6)%7)),h=hojeIso();
   const sem=[0,1,2,3,4,5,6].map(i=>{
     const s=somaDias(seg,i),n=d.cons.filter(c=>filtra(c)&&c.data===s&&ativa(c)).length;
     return '<button class="wd'+(s===data?' on':'')+(s===h?' td':'')+'" data-d="'+s+'"><small>'+AG_DIAS[dIso(s).getDay()]+'</small><b>'+dIso(s).getDate()+'</b><i>'+(n||'')+'</i></button>';
   }).join('');
-  const cartao=c=>{
+  const itens=lista.map(c=>{
     const pr=d.profs.find(x=>x.id===c.prof)||{nome:'?',cor:'#999'},st=AG_STATUS[c.status]||AG_STATUS.agendada;
     const tipo=AG_TIPOS[c.tipo]?AG_TIPOS[c.tipo].replace(' (divulgação)',''):'';
     return '<button class="ap" data-c="'+c.id+'" style="border-left:6px solid '+pr.cor+'"><div class="ah"><b>'+esc(c.hora)+'</b></div>'+
       '<div class="ai"><div class="nm">'+esc(c.pac||'Sem nome')+'</div><div class="sub">'+(p?'':esc(pr.nome)+' · ')+esc(tipo)+'</div>'+
       '<div class="chips"><span class="ch" style="background:'+st[1]+'">'+st[0]+'</span></div></div></button>';
-  };
-  const passo=p?(+p.slot||30):30,slots=p?agSlots(p,data):[];
-  const livres=slots.filter(s=>!lista.some(c=>ativa(c)&&toMin(c.hora)>=toMin(s)&&toMin(c.hora)<toMin(s)+passo));
-  const linhas=lista.map(c=>({h:c.hora,html:cartao(c)})).concat(livres.map(s=>({h:s,html:'<button class="sl" data-s="'+s+'"><b>'+s+'</b><span>Livre · toque para agendar</span></button>'})));
-  linhas.sort((x,y)=>x.h.localeCompare(y.h));
+  }).join('');
   const ativas=lista.filter(ativa).length;
-  let info='';
-  if(p){
-    const hd=p.hor&&p.hor[dIso(data).getDay()];
-    if(!p.hor||!Object.keys(p.hor).length)info='Defina os dias e horários de atendimento em “editar dados desta agenda”.';
-    else info=hd?'Atendimento: '+hd.a+' às '+hd.b+(p.pausa&&p.pausa.a?' (pausa '+p.pausa.a+'–'+p.pausa.b+')':'')+' · consultas de '+passo+' min':'Sem atendimento neste dia. Use “+ Nova consulta” para um encaixe.';
-  }
   telaModulo(p?p.nome:'Agenda geral',
     (p&&p.esp?'<div class="sub" style="margin:-8px 0 12px">'+esc(p.esp)+'</div>':'')+
     '<div class="wk">'+sem+'</div>'+
     '<div class="dn"><button class="nv" id="dp">‹</button><div class="dt">'+dataLonga(data)+(data===h?' · hoje':'')+'<div class="sub" style="font-weight:600">'+plural(ativas,'consulta','consultas')+'</div></div><button class="nv" id="dx">›</button></div>'+
-    '<div class="row" style="margin-bottom:10px"><button class="b alt" id="dh" style="flex:1;padding:11px">Hoje</button><button class="b alt" id="dg" style="flex:1;padding:11px">Ir para data</button></div>'+
-    (info?'<div class="info">'+esc(info)+'</div>':'')+
-    (linhas.map(x=>x.html).join('')||'<div class="card mut">Nenhuma consulta neste dia.</div>')+
-    (p?'<button class="b wide" id="nc">+ Nova consulta</button><button class="ed" id="ea" style="margin-top:12px">editar dados desta agenda</button>':''),
+    '<div class="row" style="margin-bottom:12px"><button class="b alt" id="dh" style="flex:1;padding:11px">Hoje</button><button class="b alt" id="dg" style="flex:1;padding:11px">Ir para data</button></div>'+
+    (itens||'<div class="card mut">Nenhuma consulta neste dia.</div>')+
+    (p?'<button class="b wide" id="nc">+ Agendar consulta</button><button class="b alt wide" id="env">📤 Enviar agenda da semana</button><button class="ed" id="ea" style="margin-top:12px">editar dados desta agenda</button>':''),
     ()=>refazer(abrirAgendas));
   const ir=s=>refazer(()=>abrirDia(pid,s));
+  const stEl=document.createElement('div');stEl.className='agst';app.appendChild(stEl);
+  agIniciar(()=>refazer(()=>abrirDia(pid,data)));
   app.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>ir(b.dataset.d));
   $('dp').onclick=()=>ir(somaDias(data,-1));
   $('dx').onclick=()=>ir(somaDias(data,1));
@@ -463,57 +523,43 @@ function abrirDia(pid,data){
     const nova=await formConsulta(c,pid,data);if(nova)ir(nova===true?data:nova.data);
   });
   if(p){
-    app.querySelectorAll('[data-s]').forEach(b=>b.onclick=async()=>{const nova=await formConsulta(null,pid,data,null,b.dataset.s);if(nova)ir(nova===true?data:nova.data)});
+    $('env').onclick=()=>enviarSemana(pid,data);
     $('nc').onclick=async()=>{const nova=await formConsulta(null,pid,data);if(nova)ir(nova===true?data:nova.data)};
     $('ea').onclick=async()=>{const r=await formProf(p);if(r==='excluida')refazer(abrirAgendas);else if(r)ir(data)};
   }
 }
 
 /* ---- formulário de consulta (nova ou existente) ---- */
-async function formConsulta(c,pidTela,data,pre,horaIni){
+async function formConsulta(c,pidTela,data,pre){
   const d=ag.get(),profId=c?c.prof:pidTela,p0=d.profs.find(x=>x.id===profId);
   if(!p0)return null;
-  const v=pre||c||{pac:'',tel:'',data:data,hora:horaIni||'',tipo:'particular',status:'agendada',obs:''};
+  const v=pre||c||{pac:'',tel:'',data:data,hora:'',tipo:'particular',status:'agendada',obs:''};
   const html=
     campo('pac','Paciente',v.pac,'text','placeholder="Nome do paciente" autocapitalize="words"')+
     campo('tel','Telefone / WhatsApp',v.tel,'tel','inputmode="tel" placeholder="(85) 99999-9999"')+
-    campo('data','Data da consulta',v.data,'date')+
-    '<label class="fl">Horário<select data-f="hora">'+opcoesHora(p0,d,v.data,v.hora,c?c.id:undefined)+'</select></label>'+
-    campo('hora2','Ou digite outro horário (encaixe)',v.hora2||'','time')+
+    campo('data','Dia da consulta',v.data,'date')+
+    campo('hora','Horário da consulta',v.hora,'time')+
     '<div class="r2">'+selecao('tipo','Tipo',Object.keys(AG_TIPOS).map(k=>[k,AG_TIPOS[k]]),v.tipo)+selecao('status','Situação',Object.keys(AG_STATUS).map(k=>[k,AG_STATUS[k][0]]),v.status)+'</div>'+
     '<label class="fl">Observações<textarea data-f="obs" rows="2">'+esc(v.obs||'')+'</textarea></label>'+
     (c?'<div class="acs"><button type="button" class="b alt" data-a="zap">WhatsApp</button><button type="button" class="b alt" data-a="del" style="color:var(--err);border-color:var(--err)">Excluir</button></div>':'');
-  const r=await caixa({titulo:c?'Consulta':'Nova consulta',sub:p0.nome+' · '+resumoHor(p0),html:html,ok:'Salvar',semEnter:true,semFoco:!!c||!!horaIni,
-    mudou:(f,ov)=>{
-      if(f!=='data')return;
-      const dt=ov.querySelector('[data-f="data"]').value,sel=ov.querySelector('[data-f="hora"]');
-      if(dt)sel.innerHTML=opcoesHora(p0,ag.get(),dt,sel.value,c?c.id:undefined);
-    },
+  const r=await caixa({titulo:c?'Consulta':'Agendar consulta',sub:p0.nome,html:html,ok:'Salvar',semEnter:true,semFoco:!!c,
     acao:(a,ler,fim)=>{
-      if(a==='zap'){const x=ler();if(!zap({pac:x.pac,tel:x.tel,data:x.data,hora:x.hora2||x.hora},p0))toast('Informe um telefone com DDD.')}
+      if(a==='zap'){const x=ler();if(!zap({pac:x.pac,tel:x.tel,data:x.data,hora:x.hora},p0))toast('Informe um telefone com DDD.')}
       else if(a==='del'){confirmar('Excluir consulta?','Essa ação não pode ser desfeita.','Excluir').then(ok=>{if(ok)fim({__del:1})})}
     }});
   if(!r)return null;
-  if(r.__del){const dd=ag.get();dd.cons=dd.cons.filter(x=>x.id!==c.id);ag.set(dd);toast('Consulta excluída.');return true}
-  const nova={id:c?c.id:uid(),prof:profId,data:r.data,hora:(r.hora2||r.hora||'').trim(),dur:+p0.slot||30,pac:r.pac.trim(),tel:r.tel.trim(),
-    tipo:r.tipo,status:r.status,obs:r.obs.trim()};
-  const reabrir=Object.assign({},nova,{hora2:r.hora2});
-  if(!nova.pac){await avisar('Falta o nome','Digite o nome do paciente.');return formConsulta(c,pidTela,data,reabrir)}
-  if(!nova.data){await avisar('Falta a data','Escolha a data da consulta.');return formConsulta(c,pidTela,data,reabrir)}
-  if(!nova.hora){await avisar('Falta o horário','Escolha um horário da lista ou digite outro.');return formConsulta(c,pidTela,data,reabrir)}
+  if(r.__del){const dd=ag.get();dd.cons=dd.cons.filter(x=>x.id!==c.id);ag.set(dd);agFila.delCons(c.id);agSync();toast('Consulta excluída.');return true}
+  const nova={id:c?c.id:uid(),prof:profId,data:r.data,hora:(r.hora||'').trim(),pac:r.pac.trim(),tel:r.tel.trim(),tipo:r.tipo,status:r.status,obs:r.obs.trim()};
+  if(!nova.pac){await avisar('Falta o nome','Digite o nome do paciente.');return formConsulta(c,pidTela,data,nova)}
+  if(!nova.data){await avisar('Falta o dia','Escolha o dia da consulta.');return formConsulta(c,pidTela,data,nova)}
+  if(!nova.hora){await avisar('Falta o horário','Escolha o horário da consulta.');return formConsulta(c,pidTela,data,nova)}
   const dd=ag.get();
   if(ativa(nova)){
-    const tem=p0.hor&&Object.keys(p0.hor).length;
-    if(tem&&agSlots(p0,nova.data).indexOf(nova.hora)<0&&!(c&&c.data===nova.data&&c.hora===nova.hora)){
-      if(!(await confirmar('Fora do horário de atendimento',p0.nome+' não atende em '+dataLonga(nova.data)+' às '+nova.hora+'. Agendar mesmo assim (encaixe)?','Agendar mesmo assim')))
-        return formConsulta(c,pidTela,data,reabrir);
-    }
-    const passo=+p0.slot||30;
-    const choque=dd.cons.find(x=>x.id!==nova.id&&x.prof===nova.prof&&x.data===nova.data&&ativa(x)&&Math.abs(toMin(x.hora)-toMin(nova.hora))<passo);
+    const choque=dd.cons.find(x=>x.id!==nova.id&&x.prof===nova.prof&&x.data===nova.data&&ativa(x)&&x.hora===nova.hora);
     if(choque&&!(await confirmar('Horário ocupado','Já existe consulta de '+(choque.pac||'outro paciente')+' às '+choque.hora+'. Agendar mesmo assim?','Agendar mesmo assim')))
-      return formConsulta(c,pidTela,data,reabrir);
+      return formConsulta(c,pidTela,data,nova);
   }
-  dd.cons=dd.cons.filter(x=>x.id!==nova.id).concat(nova);ag.set(dd);
+  dd.cons=dd.cons.filter(x=>x.id!==nova.id).concat(nova);ag.set(dd);agFila.upCons(nova);agSync();
   toast('Consulta salva.');
   return nova;
 }
@@ -522,21 +568,14 @@ async function formConsulta(c,pidTela,data,pre,horaIni){
 async function formProf(p,pre){
   const d=ag.get();
   const cores=Object.keys(AG_CORES);
-  const v=pre||(p?{nome:p.nome,esp:p.esp,hor:p.hor||horPadrao(),slot:p.slot||p.dur||30,pausa:p.pausa||{a:'',b:''},cor:p.cor}:
-    {nome:'',esp:'',hor:horPadrao(),slot:30,pausa:{a:'',b:''},cor:AG_CORES[cores[d.profs.length%cores.length]]});
+  const v=pre||(p?{nome:p.nome,esp:p.esp,zap:p.zap||'',cor:p.cor}:{nome:'',esp:'',zap:'',cor:AG_CORES[cores[d.profs.length%cores.length]]});
   const corNome=cores.find(k=>AG_CORES[k]===v.cor)||'Azul';
-  const dias=AG_ORDEM.map(w=>{
-    const h=(v.hor||{})[w];
-    return '<div class="hr"><label class="ck"><input type="checkbox" data-f="d'+w+'"'+(h?' checked':'')+'>'+AG_DIAS[w]+'</label>'+
-      '<input type="time" data-f="a'+w+'" value="'+(h?h.a:'08:00')+'"><span>às</span><input type="time" data-f="b'+w+'" value="'+(h?h.b:'12:00')+'"></div>';
-  }).join('');
   const html=
     campo('nome','Nome do profissional',v.nome,'text','placeholder="Ex: Dra. Ana" autocapitalize="words"')+
     campo('esp','Especialidade',v.esp,'text','list="esps" placeholder="Ex: Geriatra"')+
     '<datalist id="esps"><option value="Psiquiatra"><option value="Psicólogo(a)"><option value="Geriatra"></datalist>'+
-    '<label class="fl">Dias e horários de atendimento</label>'+dias+
-    '<label class="fl">Pausa (almoço) — opcional</label><div class="hr"><input type="time" data-f="pa" value="'+esc(v.pausa.a||'')+'"><span>às</span><input type="time" data-f="pb" value="'+esc(v.pausa.b||'')+'"></div>'+
-    '<div class="r2">'+selecao('slot','Duração de cada consulta',AG_SLOTS.map(m=>[m,m+' min']),v.slot)+selecao('cor','Cor da agenda',cores.map(k=>[k,k]),corNome)+'</div>'+
+    campo('zap','WhatsApp do profissional',v.zap||'','tel','inputmode="tel" placeholder="(85) 99999-9999"')+
+    selecao('cor','Cor da agenda',cores.map(k=>[k,k]),corNome)+
     (p?'<div class="acs"><button type="button" class="b alt" data-a="del" style="color:var(--err);border-color:var(--err)">Excluir esta agenda</button></div>':'');
   const r=await caixa({titulo:p?'Editar agenda':'Nova agenda',html:html,ok:'Salvar',semEnter:true,semFoco:!!p,
     acao:(a,ler,fim)=>{
@@ -545,33 +584,89 @@ async function formProf(p,pre){
     }});
   if(!r)return null;
   const dd=ag.get();
-  if(r.__del){dd.profs=dd.profs.filter(x=>x.id!==p.id);dd.cons=dd.cons.filter(x=>x.prof!==p.id);ag.set(dd);toast('Agenda excluída.');return 'excluida'}
-  const hor={};let erro='';
-  AG_ORDEM.forEach(w=>{
-    if(r['d'+w]!=='1')return;
-    const a=r['a'+w],b=r['b'+w];
-    if(!a||!b||toMin(b)<=toMin(a)){erro=erro||'Em '+AG_DIAS[w]+', o horário final precisa ser depois do inicial.';return}
-    hor[w]={a:a,b:b};
-  });
-  const pausa={a:r.pa||'',b:r.pb||''};
-  if(!erro&&(pausa.a||pausa.b)&&(!pausa.a||!pausa.b||toMin(pausa.b)<=toMin(pausa.a)))erro='A pausa precisa ter início e fim, com o fim depois do início.';
-  const volta={nome:r.nome,esp:r.esp,hor:hor,slot:+r.slot||30,pausa:pausa,cor:AG_CORES[r.cor]||'#1760c4'};
+  if(r.__del){dd.profs=dd.profs.filter(x=>x.id!==p.id);dd.cons=dd.cons.filter(x=>x.prof!==p.id);ag.set(dd);agFila.delProf(p.id);agSync();toast('Agenda excluída.');return 'excluida'}
+  const volta={nome:r.nome,esp:r.esp,zap:r.zap,cor:AG_CORES[r.cor]||'#1760c4'};
   if(!r.nome.trim()){await avisar('Falta o nome','Digite o nome do profissional.');return formProf(p,volta)}
-  if(erro){await avisar('Confira os horários',erro);
-    /* mantém os dias marcados para o usuário corrigir */
-    AG_ORDEM.forEach(w=>{if(r['d'+w]==='1'&&!volta.hor[w])volta.hor[w]={a:r['a'+w]||'08:00',b:r['b'+w]||'12:00'}});
-    return formProf(p,volta)}
-  const novo={id:p?p.id:uid(),nome:r.nome.trim(),esp:r.esp.trim(),dur:volta.slot,slot:volta.slot,hor:hor,pausa:pausa,cor:volta.cor};
+  const novo={id:p?p.id:uid(),nome:r.nome.trim(),esp:r.esp.trim(),zap:r.zap.trim(),cor:volta.cor};
   dd.profs=p?dd.profs.map(x=>x.id===p.id?novo:x):dd.profs.concat(novo);
-  ag.set(dd);toast(p?'Agenda atualizada.':'Agenda criada.');
+  ag.set(dd);agFila.upProf(novo);agSync();toast(p?'Agenda atualizada.':'Agenda criada.');
   return novo;
+}
+
+/* ---- enviar a agenda semanal ao profissional (WhatsApp) ---- */
+const AG_DIASX=['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
+const zapNum=t=>{let n=String(t||'').replace(/\D/g,'');if(n.length<10)return '';if(n.length<=11)n='55'+n;return n};
+const agSemIni=b=>somaDias(b,-((dIso(b).getDay()+6)%7));
+const rotSem=ini=>brD(ini).slice(0,5)+' a '+brD(somaDias(ini,6)).slice(0,5);
+function agMensagem(p,ini,assin){
+  const d=ag.get(),fim=somaDias(ini,6),hr=new Date().getHours();
+  const sau=hr<12?'Bom dia':hr<18?'Boa tarde':'Boa noite';
+  let total=0;const blocos=[];
+  for(let i=0;i<7;i++){
+    const dia=somaDias(ini,i),w=dIso(dia).getDay();
+    const l=d.cons.filter(c=>c.prof===p.id&&c.data===dia&&ativa(c)).sort((a,b)=>a.hora.localeCompare(b.hora));
+    if(!l.length)continue;
+    total+=l.length;
+    blocos.push('*'+AG_DIASX[w]+', '+brD(dia).slice(0,5)+'*\n'+l.map(c=>'• '+c.hora+' – '+(c.pac||'Sem nome')).join('\n'));
+  }
+  return sau+', '+p.nome+'!\n\nSegue a sua agenda de atendimentos referente à semana de '+brD(ini).slice(0,5)+' a '+brD(fim).slice(0,5)+':\n\n'+
+    (blocos.length?blocos.join('\n\n'):'Não há consultas agendadas neste período.')+
+    '\n\n*Total da semana: '+plural(total,'consulta','consultas')+'*\n\nQualquer ajuste ou dúvida, fico à disposição.\n\n'+
+    (assin?'Atenciosamente,\n'+assin:'Atenciosamente.');
+}
+async function enviarSemana(pid,base,pre){
+  const d=ag.get(),p=d.profs.find(x=>x.id===pid);if(!p)return;
+  const h=hojeIso(),atual=agSemIni(h),prox=somaDias(atual,7),tela=agSemIni(base);
+  const opc=[[atual,'Esta · '+rotSem(atual)],[prox,'Próxima · '+rotSem(prox)]];
+  if(tela!==atual&&tela!==prox)opc.unshift([tela,'Exibida · '+rotSem(tela)]);
+  const sem=pre?pre.sem:tela,assin0=pre?pre.assin:store.get('agassin','');
+  const msg0=pre?pre.msg:agMensagem(p,sem,assin0);
+  const html=selecao('sem','Semana',opc,sem)+
+    campo('zap','WhatsApp do profissional',pre?pre.zap:(p.zap||''),'tel','inputmode="tel" placeholder="(85) 99999-9999"')+
+    campo('assin','Assinatura (seu nome e função)',assin0,'text','placeholder="Ex: Carlos Barreto – Administrativo"')+
+    '<label class="fl">Mensagem (você pode editar antes de enviar)<textarea data-f="msg" rows="11">'+esc(msg0)+'</textarea></label>'+
+    '<div class="acs"><button type="button" class="b alt" data-a="copiar">Copiar mensagem</button></div>';
+  const r=await caixa({titulo:'Enviar agenda da semana',sub:p.nome,html:html,ok:'Enviar no WhatsApp',semEnter:true,semFoco:true,
+    mudou:(f,ov)=>{
+      if(f!=='sem'&&f!=='assin')return;
+      const q=k=>ov.querySelector('[data-f="'+k+'"]').value;
+      ov.querySelector('[data-f="msg"]').value=agMensagem(p,q('sem'),q('assin').trim());
+    },
+    acao:(a,ler)=>{
+      if(a!=='copiar')return;
+      const t=ler().msg;
+      (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('Mensagem copiada.')).catch(()=>toast('Não consegui copiar.'));
+    }});
+  if(!r)return;
+  const n=zapNum(r.zap);
+  if(!n){await avisar('Falta o WhatsApp','Digite o número do profissional com DDD, por exemplo (85) 99999-9999.');return enviarSemana(pid,base,{sem:r.sem,zap:r.zap,assin:r.assin,msg:r.msg})}
+  store.set('agassin',r.assin.trim());
+  if((p.zap||'')!==r.zap.trim()){const dd=ag.get();dd.profs=dd.profs.map(x=>x.id===pid?Object.assign({},x,{zap:r.zap.trim()}):x);ag.set(dd);agFila.upProf(dd.profs.find(x=>x.id===pid));agSync()}
+  window.open('https://wa.me/'+n+'?text='+encodeURIComponent(r.msg),'_blank');
+}
+function abrirEnvios(off){
+  off=off||0;
+  const d=ag.get(),ini=somaDias(agSemIni(hojeIso()),7*off);
+  const linhas=d.profs.map(p=>{
+    const n=d.cons.filter(c=>c.prof===p.id&&c.data>=ini&&c.data<=somaDias(ini,6)&&ativa(c)).length;
+    return '<div class="card" style="border-left:6px solid '+p.cor+'"><div class="nm">'+esc(p.nome)+'</div><div class="sub">'+esc(p.esp||'')+(p.esp?' · ':'')+plural(n,'consulta','consultas')+'</div>'+
+      '<div class="sub">'+(zapNum(p.zap)?'WhatsApp: '+esc(p.zap):'<span class="err">WhatsApp ainda não cadastrado</span>')+'</div>'+
+      '<button class="b wide" data-e="'+p.id+'" style="margin-top:10px">Enviar agenda</button></div>';
+  }).join('');
+  telaModulo('Enviar agendas',
+    '<div class="row" style="margin-bottom:12px"><button class="b'+(off?' alt':'')+'" id="e0" style="flex:1;padding:11px">Esta semana</button><button class="b'+(off?'':' alt')+'" id="e1" style="flex:1;padding:11px">Próxima semana</button></div>'+
+    '<div class="info" style="margin-top:-2px">Semana de '+rotSem(ini)+'</div>'+
+    (linhas||'<div class="card mut">Crie uma agenda para poder enviar.</div>'),()=>refazer(abrirAgendas));
+  $('e0').onclick=()=>refazer(()=>abrirEnvios(0));
+  $('e1').onclick=()=>refazer(()=>abrirEnvios(1));
+  app.querySelectorAll('[data-e]').forEach(b=>b.onclick=async()=>{await enviarSemana(b.dataset.e,ini);refazer(()=>abrirEnvios(off))});
 }
 
 /* ---- backup e exportação ---- */
 function abrirBackupAg(){
   const d=ag.get();
   telaModulo('Backup e exportar',
-    '<div class="card"><div class="sub">As agendas ficam salvas somente neste celular ('+plural(d.profs.length,'agenda','agendas')+', '+plural(d.cons.length,'consulta','consultas')+'). Se limpar os dados do navegador ou trocar de aparelho, elas somem. Faça backup com frequência e guarde o arquivo em local seguro, pois ele tem dados de pacientes.</div>'+
+    '<div class="card"><div class="sub">As agendas ficam na planilha do Google (abas Profissionais e Consultas) e também neste celular, para funcionar sem internet ('+plural(d.profs.length,'agenda','agendas')+', '+plural(d.cons.length,'consulta','consultas')+'). O backup em arquivo é uma segurança extra. Guarde-o em local seguro, pois tem dados de pacientes.</div>'+
     '<button class="b wide" id="bkd">Baixar backup (arquivo)</button>'+
     '<button class="b alt wide" id="bkr">Restaurar backup</button>'+
     '<input type="file" id="bkf" accept=".json,application/json" style="display:none"></div>'+
@@ -589,8 +684,12 @@ function abrirBackupAg(){
     const f=e.target.files&&e.target.files[0];if(!f)return;
     let novo;try{novo=JSON.parse(await f.text())}catch(x){}
     if(!novo||!Array.isArray(novo.profs)||!Array.isArray(novo.cons)){await avisar('Arquivo inválido','Esse arquivo não é um backup das agendas.');e.target.value='';return}
-    if(await confirmar('Restaurar backup?','Isso substitui as agendas deste celular por '+plural(novo.profs.length,'agenda','agendas')+' e '+plural(novo.cons.length,'consulta','consultas')+' do arquivo.','Restaurar')){
-      ag.set({profs:novo.profs,cons:novo.cons});toast('Backup restaurado.');refazer(abrirBackupAg);
+    if(await confirmar('Restaurar backup?','Isso junta '+plural(novo.profs.length,'agenda','agendas')+' e '+plural(novo.cons.length,'consulta','consultas')+' do arquivo com o que já existe. Se o código for o mesmo, vale o do arquivo.','Restaurar')){
+      const at=ag.get(),m1={},m2={};
+      at.profs.concat(novo.profs).forEach(x=>m1[x.id]=x);at.cons.concat(novo.cons).forEach(x=>m2[x.id]=x);
+      ag.set({profs:Object.keys(m1).map(k=>m1[k]),cons:Object.keys(m2).map(k=>m2[k])});
+      novo.profs.forEach(p=>agFila.upProf(p));novo.cons.forEach(c=>agFila.upCons(c));agSync();
+      toast('Backup restaurado.');refazer(abrirBackupAg);
     }
     e.target.value='';
   };
