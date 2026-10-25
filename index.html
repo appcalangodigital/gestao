@@ -663,13 +663,25 @@ async function formFin(tipo,x){
     campo('valor','Valor (R$)',v.valor===''?'':String(v.valor).replace('.',','),'text','inputmode="decimal" placeholder="0,00"')+
     selecao('forma','Forma de pagamento',FIN_FORMAS,v.forma)+
     selecao('sit','Situação',[['Realizado',ent?'Recebido':'Pago'],['Pendente',ent?'A receber':'A pagar']],v.sit)+
-    campo('obs','Observações',v.obs)+(novo?'':botaoExcluir('Excluir lançamento')),ok:'Salvar',acao:acaoExcluir});
+    (novo?selecao('rep','🔁 Repete?',[['0','Não repete'],['1','Todo mês'],['2','A cada 2 meses'],['3','A cada 3 meses'],['6','A cada 6 meses'],['12','Todo ano']],'0')+
+      '<div id="repbox" style="display:none">'+campo('lim','Dia limite para '+(ent?'receber':'pagar'),'','number','inputmode="numeric" min="1" max="31" placeholder="Ex: 10"')+
+      '<div class="sub" style="margin-top:6px">A data acima vira o dia em que costuma '+(ent?'receber':'pagar')+'. O app avisa todo mês se ainda não foi '+(ent?'recebido':'pago')+'.</div></div>':'')+
+    campo('obs','Observações',v.obs)+(novo?'':botaoExcluir('Excluir lançamento')),ok:'Salvar',acao:acaoExcluir,
+    mudou:(f,ov)=>{if(f==='rep')ov.querySelector('#repbox').style.display=ov.querySelector('[data-f="rep"]').value==='0'?'none':'block'}});
   if(!r)return false;
   if(r.__del){if(await confirmar('Excluir lançamento?',v.desc||v.cat,'Excluir')){fin.apagar(v.id);return true}return false}
   const valor=numBr(r.valor);
   if(!r.data){await avisar('Falta a data','Informe a data.');return false}
   if(!(valor>0)){await avisar('Falta o valor','Digite um valor maior que zero.');return false}
-  fin.salvar({id:v.id,tipo,data:r.data,desc:r.desc.trim()||r.cat,cat:r.cat,valor,forma:r.forma,sit:r.sit,obs:r.obs.trim(),rec:v.rec||'',comp:v.comp||''});
+  let recId='',comp='';
+  if(novo&&r.rep&&r.rep!=='0'){
+    const dia=Number(r.data.slice(8,10)),lim=r.lim===''?dia:parseInt(r.lim,10);
+    if(!(lim>=dia&&lim<=31)){await avisar('Dia limite','O dia limite precisa ser igual ou depois do dia '+dia+'.');return false}
+    recId='r'+uid();comp=r.data.slice(0,7);
+    fin.salvar({id:recId,tipo:ent?'rec_e':'rec_s',data:'',desc:r.desc.trim()||r.cat,cat:r.cat,valor,forma:r.forma,sit:'',obs:r.obs.trim(),dia,lim,per:Number(r.rep),ini:comp,pulos:'',rec:'',comp:'',ativo:'1'});
+    toast('Recorrência criada. O app vai avisar.');
+  }
+  if(!recId||r.sit==='Realizado')fin.salvar({id:v.id,tipo,data:r.data,desc:r.desc.trim()||r.cat,cat:r.cat,valor,forma:r.forma,sit:r.sit,obs:r.obs.trim(),rec:recId||v.rec||'',comp:recId?comp:(v.comp||'')});
   finMes=r.data.slice(0,7);
   return true;
 }
@@ -753,7 +765,7 @@ function abrirFin(){
   telaModulo('Financeiro',
     '<div class="card"><div class="tot" id="fa"></div>'+
     '<div class="row" style="margin-top:8px"><button class="b alt" id="g1" style="flex:1">Todos</button><button class="b alt" id="g2" style="flex:1">Precisam de atenção</button></div>'+
-    '<button class="b wide" id="gr" style="margin-top:8px">🔁 Recorrência</button></div>'+
+    '<button class="b alt wide" id="gr" style="margin-top:8px">🔁 Ver recorrências</button></div>'+
     '<div class="card"><div class="row" style="justify-content:space-between"><button class="b alt" id="mp" style="width:52px;padding:10px">‹</button><b id="mn"></b><button class="b alt" id="mq" style="width:52px;padding:10px">›</button></div>'+
     '<div class="tot" style="margin-top:12px"><span class="ok" id="te"></span><span class="err" id="ts"></span></div>'+
     '<div class="tot"><span id="sd2"></span></div><div class="sub" id="pd"></div>'+
