@@ -116,6 +116,12 @@ label.chk{display:flex;gap:8px;align-items:center;margin:10px 0;color:var(--mut)
 .dlg input[type=checkbox]{display:inline-block;width:20px;height:20px;margin:0;padding:0;accent-color:#1760c4}
 .agst{font-size:.8rem;text-align:center;padding:10px 4px 2px;cursor:pointer;color:var(--mut)}
 .agst.ok{color:#1f7a4d}.agst.err{color:#b3261e}
+.tile{position:relative}
+.bd{position:absolute;top:8px;right:10px;min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:#e53935;color:#fff;font-size:.78rem;font-weight:800;display:flex;align-items:center;justify-content:center}
+.item.v{box-shadow:inset 4px 0 0 #b3261e;padding-left:10px}
+.item.a{box-shadow:inset 4px 0 0 #e08a00;padding-left:10px}
+.nm.v{color:#b3261e}.nm.a{color:#b86e00}
+#fa{font-size:.88rem;gap:4px 8px}#fa span{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -157,6 +163,8 @@ function inicio(){
     EM_BREVE.map(()=>'<div class="tile soon"><img class="lg" src="icon-192.png" alt="" width="64" height="64"><b class="eb">EM BREVE</b></div>').join('')+'</div>';
   app.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>MODULES.find(m=>m.id===b.dataset.m).abrir());
   $('un').onclick=escolherUnid;
+  const nAl=finAlertas(),tf=app.querySelector('[data-m="financeiro"]');
+  if(nAl&&tf)tf.insertAdjacentHTML('beforeend','<span class="bd">'+nAl+'</span>');
   if(store.get('planilha',{}).token)unidades.sync().then(()=>{const e=$('unn');if(e)e.textContent=unidAtual().nome});
 }
 function telaModulo(t,html,volta){
@@ -595,14 +603,59 @@ const FIN_CATS={
 };
 const FIN_FORMAS=[['','—'],['Pix','Pix'],['Dinheiro','Dinheiro'],['Cartão','Cartão'],['Transferência','Transferência'],['Boleto','Boleto']];
 const MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-const fin=tabela('Financeiro',['id','tipo','data','desc','cat','valor','forma','sit','obs','atu','apagado'],
-  ['ID','Tipo','Data','Descrição','Categoria','Valor (R$)','Forma de pagamento','Situação','Observações','Atualizado (código)','Apagado (1=sim)'],[1,2,3,4,5,7,8,9]);
-let finMes=null;
+/* as recorrências ficam na mesma aba Financeiro (tipo rec_e = entrada recorrente, rec_s = saída recorrente) */
+const fin=tabela('Financeiro',['id','tipo','data','desc','cat','valor','forma','sit','obs','atu','apagado','dia','lim','per','ini','pulos','rec','comp','ativo'],
+  ['ID','Tipo (entrada, saida, rec_e, rec_s)','Data','Descrição','Categoria','Valor (R$)','Forma de pagamento','Situação','Observações','Atualizado (código)','Apagado (1=sim)','Recorrência: dia habitual','Recorrência: dia limite','Recorrência: repete a cada (meses)','Recorrência: início (mês)','Recorrência: meses pulados','Veio da recorrência (código)','Competência (mês)','Recorrência ativa (1=sim)'],[1,2,3,4,5,7,8,9,15,16,17,18]);
+let finMes=null,finFiltro='todos';
 const nomeMes=ym=>MESES[Number(ym.slice(5,7))-1]+' de '+ym.slice(0,4);
 const mudaMes=(ym,n)=>{const d=new Date(Number(ym.slice(0,4)),Number(ym.slice(5,7))-1+n,1);return isoD(d).slice(0,7)};
+const finLanc=()=>fin.todos().filter(x=>x.tipo==='entrada'||x.tipo==='saida');
+const finRec=()=>fin.todos().filter(x=>x.tipo==='rec_e'||x.tipo==='rec_s');
+const diaMes=(ym,d)=>{const a=ym.split('-').map(Number),u=new Date(a[0],a[1],0).getDate();return ym+'-'+String(Math.min(Math.max(1,Number(d)||1),u)).padStart(2,'0')};
+const difDias=(a,b)=>Math.round((dIso(a)-dIso(b))/864e5);
+const dm=s=>brD(s).slice(0,5);
+
+/* ocorrências das recorrências que ainda não foram baixadas (do início até a próxima prevista) */
+function finOcorr(){
+  const h=hojeIso(),ymH=h.slice(0,7),feitos={};
+  finLanc().forEach(x=>{if(x.rec&&x.comp&&x.sit==='Realizado')feitos[x.rec+'|'+x.comp]=1});
+  const out=[];
+  finRec().filter(r=>String(r.ativo)!=='0').forEach(r=>{
+    const per=Math.max(1,Number(r.per)||1),pul=String(r.pulos||'').split(',');
+    let ym=r.ini||ymH,n=0;
+    while(ym<ymH&&n++<600)ym=mudaMes(ym,per);
+    if(ym===ymH&&!feitos[r.id+'|'+ym]&&pul.indexOf(ym)<0)out.push({r:r,ym:ym});
+  });
+  return out;
+}
+function ocInfo(o){
+  const r=o.r,en=r.tipo==='rec_e',h=hojeIso();
+  o.esp=diaMes(o.ym,r.dia);o.lim=diaMes(o.ym,Math.max(Number(r.lim)||0,Number(r.dia)||1));
+  if(h>o.lim){const n=difDias(h,o.lim);return{k:'v',txt:'Atrasado há '+plural(n,'dia','dias')+' · limite '+dm(o.lim),ord:-1000-n}}
+  if(h>=o.esp)return{k:'a',txt:(en?'Ainda não recebido':'Ainda não pago')+' · limite '+dm(o.lim),ord:difDias(o.lim,h)};
+  const n=difDias(o.esp,h);
+  if(n<=3)return{k:'a',txt:'Previsto em '+plural(n,'dia','dias')+' · '+dm(o.esp),ord:100+n};
+  return{k:'o',txt:'Previsto para '+dm(o.esp),ord:1000+n};
+}
+function lancInfo(x){
+  const en=x.tipo==='entrada';
+  if(x.sit!=='Pendente')return{k:'o',feito:true,txt:en?'Recebido':'Pago',ord:5000};
+  const n=difDias(x.data,hojeIso());
+  if(n<0)return{k:'v',txt:'Atrasado há '+plural(-n,'dia','dias'),ord:-1000+n};
+  if(n===0)return{k:'a',txt:en?'A receber hoje':'A pagar hoje',ord:0};
+  if(n<=7)return{k:'a',txt:(en?'A receber':'A pagar')+' em '+plural(n,'dia','dias'),ord:n};
+  return{k:'o',txt:(en?'A receber':'A pagar')+' em '+dm(x.data),ord:1000+n};
+}
+function finItens(){
+  return finLanc().map(x=>({t:'l',x:x,i:lancInfo(x),data:x.data}))
+    .concat(finOcorr().map(y=>{const i=ocInfo(y);return{t:'o',y:y,i:i,data:y.esp}}));
+}
+const precisa=it=>it.i.k==='v'||it.i.k==='a';
+const noMesAtual=it=>String(it.data).slice(0,7)===hojeIso().slice(0,7);
+const finAlertas=()=>finItens().filter(it=>precisa(it)&&noMesAtual(it)).length;
 
 async function formFin(tipo,x){
-  const novo=!x,v=x||{id:'f'+uid(),tipo,data:hojeIso(),desc:'',cat:'',valor:'',forma:'',sit:'Realizado',obs:''};
+  const novo=!x,v=x||{id:'f'+uid(),tipo,data:hojeIso(),desc:'',cat:'',valor:'',forma:'',sit:'Realizado',obs:'',rec:'',comp:''};
   tipo=v.tipo;const ent=tipo==='entrada',cats=FIN_CATS[tipo];
   const r=await caixa({titulo:(novo?'Nova ':'Editar ')+(ent?'entrada':'saída'),html:
     campo('data','Data',v.data,'date')+campo('desc','Descrição',v.desc)+
@@ -616,44 +669,153 @@ async function formFin(tipo,x){
   const valor=numBr(r.valor);
   if(!r.data){await avisar('Falta a data','Informe a data.');return false}
   if(!(valor>0)){await avisar('Falta o valor','Digite um valor maior que zero.');return false}
-  fin.salvar({id:v.id,tipo,data:r.data,desc:r.desc.trim()||r.cat,cat:r.cat,valor,forma:r.forma,sit:r.sit,obs:r.obs.trim()});
+  fin.salvar({id:v.id,tipo,data:r.data,desc:r.desc.trim()||r.cat,cat:r.cat,valor,forma:r.forma,sit:r.sit,obs:r.obs.trim(),rec:v.rec||'',comp:v.comp||''});
   finMes=r.data.slice(0,7);
   return true;
 }
+
+/* registrar que a ocorrência de uma recorrência foi recebida/paga */
+async function baixarOc(rid,ym){
+  const r=finRec().find(x=>x.id===rid);if(!r)return false;
+  const ent=r.tipo==='rec_e';
+  const q=await caixa({titulo:ent?'Registrar recebimento':'Registrar pagamento',sub:r.desc+' · '+nomeMes(ym),html:
+    campo('valor','Valor (R$)',String(r.valor).replace('.',','),'text','inputmode="decimal"')+campo('data','Data',hojeIso(),'date')+selecao('forma','Forma de pagamento',FIN_FORMAS,r.forma),ok:ent?'Recebido':'Pago'});
+  if(!q)return false;
+  const valor=numBr(q.valor);
+  if(!(valor>0)){await avisar('Falta o valor','Digite um valor maior que zero.');return false}
+  const data=q.data||hojeIso();
+  fin.salvar({id:'f'+uid(),tipo:ent?'entrada':'saida',data,desc:r.desc,cat:r.cat,valor,forma:q.forma,sit:'Realizado',obs:'',rec:r.id,comp:ym});
+  finMes=data.slice(0,7);
+  return true;
+}
+async function pularOc(rid,ym){
+  const r=finRec().find(x=>x.id===rid);if(!r)return false;
+  if(!(await confirmar('Pular '+nomeMes(ym)+'?',r.desc+': o app não vai mais cobrar esta vez.','Pular')))return false;
+  fin.salvar(Object.assign({},r,{pulos:(r.pulos?r.pulos+',':'')+ym}));
+  return true;
+}
+async function formRec(tipo,x){
+  const novo=!x,v=x||{id:'r'+uid(),tipo:tipo==='entrada'?'rec_e':'rec_s',desc:'',cat:'',valor:'',forma:'',obs:'',dia:'',lim:'',per:1,ini:hojeIso().slice(0,7),pulos:'',ativo:'1'};
+  const ent=v.tipo==='rec_e',cats=FIN_CATS[ent?'entrada':'saida'];
+  const r=await caixa({titulo:(novo?'Nova ':'Editar ')+(ent?'entrada recorrente':'saída recorrente'),html:
+    campo('desc',ent?'De quem ou o que é':'Para quem ou o que é',v.desc,'text','placeholder="'+(ent?'Ex: Mensalidade da Maria':'Ex: Aluguel da sala')+'"')+
+    selecao('cat','Categoria',cats.map(c=>[c,c]),v.cat||(ent?cats[0]:cats[cats.length-1]))+
+    campo('valor','Valor esperado (R$)',v.valor===''?'':String(v.valor).replace('.',','),'text','inputmode="decimal" placeholder="0,00"')+
+    '<div class="r2">'+campo('dia','Dia que costuma '+(ent?'receber':'pagar'),v.dia,'number','inputmode="numeric" min="1" max="31" placeholder="Ex: 5"')+campo('lim','Dia limite',v.lim,'number','inputmode="numeric" min="1" max="31" placeholder="Ex: 10"')+'</div>'+
+    selecao('per','Repete',[[1,'Todo mês'],[2,'A cada 2 meses'],[3,'A cada 3 meses'],[6,'A cada 6 meses'],[12,'Todo ano']],v.per)+
+    campo('ini','Começa em (mês)',v.ini,'month')+
+    selecao('forma','Forma de pagamento',FIN_FORMAS,v.forma)+
+    selecao('ativo','Situação',[['1','Ativa'],['0','Pausada']],String(v.ativo)==='0'?'0':'1')+
+    campo('obs','Observações',v.obs)+(novo?'':botaoExcluir('Excluir recorrência')),ok:'Salvar',semEnter:true,semFoco:!novo,acao:acaoExcluir});
+  if(!r)return false;
+  if(r.__del){if(await confirmar('Excluir recorrência?',v.desc+'. Os lançamentos já registrados continuam.','Excluir')){fin.apagar(v.id);return true}return false}
+  const valor=numBr(r.valor),dia=parseInt(r.dia,10),lim=r.lim===''?dia:parseInt(r.lim,10);
+  if(!r.desc.trim()){await avisar('Falta o nome','Escreva de quem ou o que é.');return false}
+  if(!(valor>0)){await avisar('Falta o valor','Digite o valor esperado.');return false}
+  if(!(dia>=1&&dia<=31)){await avisar('Falta o dia','Digite o dia do mês (de 1 a 31) em que costuma '+(ent?'receber':'pagar')+'.');return false}
+  if(!(lim>=dia&&lim<=31)){await avisar('Dia limite','O dia limite precisa ser igual ou depois do dia '+dia+'.');return false}
+  if(!r.ini){await avisar('Falta o mês','Escolha o mês em que começa.');return false}
+  fin.salvar({id:v.id,tipo:v.tipo,data:'',desc:r.desc.trim(),cat:r.cat,valor,forma:r.forma,sit:'',obs:r.obs.trim(),dia,lim,per:Number(r.per)||1,ini:r.ini,pulos:v.pulos||'',rec:'',comp:'',ativo:r.ativo});
+  return true;
+}
+function abrirRec(){
+  telaModulo('Recorrência','<div class="card"><div class="sub">Cadastre o que entra e o que sai todo mês (ou a cada alguns meses). A cada mês começa do zero: passou do dia habitual sem registro, o app avisa; passou do dia limite, marca como atrasado.</div>'+
+    '<div class="row" style="margin-top:10px"><button class="b" id="re" style="flex:1">+ Entrada</button><button class="b" id="rs" style="flex:1;background:#b3261e">− Saída</button></div>'+
+    '<div id="sy" class="sub" style="margin-top:8px"></div></div><div class="card" id="rl"></div>',abrirFin);
+  function pinta(){
+    if(!$('rl'))return;
+    const oc=finOcorr().map(y=>({y:y,i:ocInfo(y)})).sort((a,b)=>a.i.ord-b.i.ord);
+    const rs=finRec().sort((a,b)=>(a.tipo===b.tipo?0:a.tipo==='rec_e'?-1:1)||a.desc.localeCompare(b.desc));
+    $('rl').innerHTML=rs.length?rs.map(r=>{
+      const en=r.tipo==='rec_e',pausada=String(r.ativo)==='0',o=oc.find(z=>z.y.r.id===r.id);
+      const per=Number(r.per)||1,quando=per===1?'todo mês':per===12?'todo ano':'a cada '+per+' meses';
+      const chip=pausada?'<span class="st n">Pausada</span>':o?'<span class="st '+o.i.k+'">'+esc(o.i.txt)+'</span>':'<span class="st o">Em dia</span>';
+      const k=!pausada&&o?o.i.k:'';
+      return '<div class="item '+k+'"><div class="info"><div class="nm '+k+'">'+(en?'⬆ ':'⬇ ')+esc(r.desc)+'</div><div class="sub">'+moeda(Number(r.valor))+' · dia '+r.dia+' (limite dia '+r.lim+') · '+quando+'</div>'+chip+
+        '<div class="ac">'+(o?'<button class="ed" data-b="'+r.id+'|'+o.y.ym+'">'+(en?'receber':'pagar')+'</button><button class="ed" data-p="'+r.id+'|'+o.y.ym+'">pular</button>':'')+'<button class="ed" data-r="'+r.id+'">editar</button></div></div></div>';
+    }).join(''):'<span class="mut">Nenhuma recorrência cadastrada ainda.</span>';
+  }
+  const depois=async f=>{if(await f){pinta();await marcaSync(fin);pinta()}};
+  $('re').onclick=()=>depois(formRec('entrada',null));
+  $('rs').onclick=()=>depois(formRec('saida',null));
+  $('rl').onclick=e=>{
+    const t=e.target.closest('button');if(!t)return;
+    if(t.dataset.r){const r=finRec().find(x=>x.id===t.dataset.r);if(r)depois(formRec(r.tipo,r))}
+    else if(t.dataset.b){const a=t.dataset.b.split('|');depois(baixarOc(a[0],a[1]))}
+    else if(t.dataset.p){const a=t.dataset.p.split('|');depois(pularOc(a[0],a[1]))}
+  };
+  pinta();
+  marcaSync(fin).then(pinta);
+}
+
 function abrirFin(){
   if(!finMes)finMes=hojeIso().slice(0,7);
-  telaModulo('Financeiro','<div class="card"><div class="row" style="justify-content:space-between"><button class="b alt" id="mp" style="width:52px;padding:10px">‹</button><b id="mn"></b><button class="b alt" id="mq" style="width:52px;padding:10px">›</button></div>'+
+  telaModulo('Financeiro',
+    '<div class="card"><div class="tot" id="fa"></div>'+
+    '<div class="row" style="margin-top:8px"><button class="b alt" id="g1" style="flex:1">Todos</button><button class="b alt" id="g2" style="flex:1">Precisam de atenção</button></div>'+
+    '<button class="b wide" id="gr" style="margin-top:8px">🔁 Recorrência</button></div>'+
+    '<div class="card"><div class="row" style="justify-content:space-between"><button class="b alt" id="mp" style="width:52px;padding:10px">‹</button><b id="mn"></b><button class="b alt" id="mq" style="width:52px;padding:10px">›</button></div>'+
     '<div class="tot" style="margin-top:12px"><span class="ok" id="te"></span><span class="err" id="ts"></span></div>'+
     '<div class="tot"><span id="sd2"></span></div><div class="sub" id="pd"></div>'+
     '<div class="row" style="margin-top:10px"><button class="b" id="ne" style="flex:1">+ Entrada</button><button class="b" id="ns" style="flex:1;background:#b3261e">− Saída</button></div>'+
     '<div id="sy" class="sub" style="margin-top:8px"></div></div>'+
     '<div class="card" id="fl"></div><div class="card" id="fc"></div>'+
     '<button class="b alt wide" id="fx">Baixar planilha do mês (CSV)</button>',inicio);
-  const doMes=()=>fin.todos().filter(x=>String(x.data).slice(0,7)===finMes);
+  function linha(it){
+    const k=it.i.k,feito=it.i.feito;
+    if(it.t==='l'){
+      const x=it.x,en=x.tipo==='entrada';
+      return '<div class="item '+(feito?'':k)+'"><div class="info"><div class="nm '+(feito?'':k)+'">'+esc(x.desc||x.cat)+'</div><div class="sub">'+esc(brD(x.data).slice(0,5)+' · '+x.cat+(x.forma?' · '+x.forma:''))+'</div>'+
+        (feito?'':'<span class="st '+k+'">'+esc(it.i.txt)+'</span>')+
+        '<div class="ac"><button class="ed" data-e="'+x.id+'">editar</button></div></div><div class="dif '+(en?'ok':'err')+'">'+(en?'+':'−')+moeda(Number(x.valor))+'</div></div>';
+    }
+    const r=it.y.r,en=r.tipo==='rec_e',id=r.id+'|'+it.y.ym;
+    return '<div class="item '+k+'"><div class="info"><div class="nm '+k+'">🔁 '+esc(r.desc)+'</div><div class="sub">'+esc(nomeMes(it.y.ym)+' · '+r.cat)+'</div>'+
+      '<span class="st '+k+'">'+esc(it.i.txt)+'</span>'+
+      '<div class="ac"><button class="ed" data-b="'+id+'">'+(en?'receber':'pagar')+'</button><button class="ed" data-p="'+id+'">pular</button><button class="ed" data-r="'+r.id+'">editar</button></div></div>'+
+      '<div class="dif '+(en?'ok':'err')+'">'+(en?'+':'−')+moeda(Number(r.valor))+'</div></div>';
+  }
   function pinta(){
     if(!$('fl'))return;
-    const l=doMes().sort((a,b)=>String(b.data).localeCompare(String(a.data)));
-    const soma=(t,s)=>l.filter(x=>x.tipo===t&&x.sit===s).reduce((a,x)=>a+Number(x.valor),0);
-    const e=soma('entrada','Realizado'),s=soma('saida','Realizado'),pr=soma('entrada','Pendente'),pp=soma('saida','Pendente');
+    const todos=finItens();
+    const atual=todos.filter(noMesAtual),c=k=>atual.filter(it=>it.i.k===k&&!it.i.feito).length;
+    $('fa').innerHTML='<span class="err">Atrasados: '+c('v')+'</span><span style="color:#e08a00">A vencer: '+c('a')+'</span><span class="mut">Previstos: '+c('o')+'</span>';
+    $('g1').style.opacity=finFiltro==='todos'?1:.55;$('g2').style.opacity=finFiltro==='atencao'?1:.55;
+    const doMes=todos.filter(it=>String(it.data).slice(0,7)===finMes);
+    const lm=doMes.filter(it=>it.t==='l').map(it=>it.x);
+    const soma=(t,s)=>lm.filter(x=>x.tipo===t&&x.sit===s).reduce((a,x)=>a+Number(x.valor),0);
+    const somaO=t=>doMes.filter(it=>it.t==='o'&&it.y.r.tipo===t).reduce((a,it)=>a+Number(it.y.r.valor),0);
+    const e=soma('entrada','Realizado'),s=soma('saida','Realizado'),pr=soma('entrada','Pendente')+somaO('rec_e'),pp=soma('saida','Pendente')+somaO('rec_s');
     $('mn').textContent=nomeMes(finMes);
     $('te').textContent='Entradas: '+moeda(e);$('ts').textContent='Saídas: '+moeda(s);
     $('sd2').innerHTML='Saldo do mês: <b class="'+(e-s>=0?'ok':'err')+'">'+moeda(e-s)+'</b>';
     $('pd').textContent=(pr||pp)?'Pendentes: a receber '+moeda(pr)+' · a pagar '+moeda(pp):'';
-    $('fl').innerHTML=l.length?l.map(x=>{const en=x.tipo==='entrada';
-      return '<div class="item"><div class="info"><div class="nm">'+esc(x.desc||x.cat)+'</div><div class="sub">'+esc(brD(x.data).slice(0,5)+' · '+x.cat+(x.forma?' · '+x.forma:''))+(x.sit==='Pendente'?' · <b style="color:#e08a00">'+(en?'a receber':'a pagar')+'</b>':'')+'</div>'+
-      '<div class="ac"><button class="ed" data-e="'+x.id+'">editar</button></div></div><div class="dif '+(en?'ok':'err')+'">'+(en?'+':'−')+moeda(Number(x.valor))+'</div></div>'}).join(''):'<span class="mut">Nenhum lançamento neste mês.</span>';
-    const por={};l.filter(x=>x.sit==='Realizado').forEach(x=>{const k=x.tipo+'|'+x.cat;por[k]=(por[k]||0)+Number(x.valor)});
+    let l;
+    if(finFiltro==='atencao')l=atual.filter(precisa).sort((a,b)=>a.i.ord-b.i.ord);
+    else l=doMes.sort((a,b)=>String(b.data).localeCompare(String(a.data)));
+    $('fl').innerHTML=(finFiltro==='atencao'?'<div class="sub" style="margin-bottom:6px">Deste mês, do mais urgente ao menos urgente</div>':'')+
+      (l.length?l.map(linha).join(''):'<span class="mut">'+(finFiltro==='atencao'?'Nada precisa de atenção.':'Nenhum lançamento neste mês.')+'</span>');
+    const por={};lm.filter(x=>x.sit==='Realizado').forEach(x=>{const k=x.tipo+'|'+x.cat;por[k]=(por[k]||0)+Number(x.valor)});
     const ks=Object.keys(por).sort((a,b)=>por[b]-por[a]);
     $('fc').innerHTML=ks.length?'<div class="nm" style="margin-bottom:6px">Por categoria</div>'+ks.map(k=>'<div class="tot" style="font-weight:600"><span>'+esc(k.split('|')[1])+'</span><span class="'+(k.startsWith('entrada')?'ok':'err')+'">'+moeda(por[k])+'</span></div>').join(''):'';
   }
   const depois=async f=>{if(await f){pinta();await marcaSync(fin);pinta()}};
+  $('g1').onclick=()=>{finFiltro='todos';pinta()};
+  $('g2').onclick=()=>{finFiltro='atencao';pinta()};
+  $('gr').onclick=abrirRec;
   $('mp').onclick=()=>{finMes=mudaMes(finMes,-1);pinta()};
   $('mq').onclick=()=>{finMes=mudaMes(finMes,1);pinta()};
   $('ne').onclick=()=>depois(formFin('entrada',null));
   $('ns').onclick=()=>depois(formFin('saida',null));
-  $('fl').onclick=e=>{const t=e.target.closest('button');if(!t||!t.dataset.e)return;const x=fin.todos().find(y=>y.id===t.dataset.e);if(x)depois(formFin(x.tipo,x))};
+  $('fl').onclick=e=>{
+    const t=e.target.closest('button');if(!t)return;
+    if(t.dataset.e){const x=fin.todos().find(y=>y.id===t.dataset.e);if(x)depois(formFin(x.tipo,x))}
+    else if(t.dataset.b){const a=t.dataset.b.split('|');depois(baixarOc(a[0],a[1]))}
+    else if(t.dataset.p){const a=t.dataset.p.split('|');depois(pularOc(a[0],a[1]))}
+    else if(t.dataset.r){const r=finRec().find(x=>x.id===t.dataset.r);if(r)depois(formRec(r.tipo,r))}
+  };
   $('fx').onclick=()=>{
-    const l=doMes().sort((a,b)=>String(a.data).localeCompare(String(b.data)));
+    const l=finLanc().filter(x=>String(x.data).slice(0,7)===finMes).sort((a,b)=>String(a.data).localeCompare(String(b.data)));
     if(!l.length){toast('Nada para baixar neste mês.');return}
     baixarCSV('financeiro-'+finMes+'.csv',[['Financeiro - '+unidAtual().nome,nomeMes(finMes)],[],['Data','Tipo','Descrição','Categoria','Valor','Forma','Situação','Observações']]
       .concat(l.map(x=>[brD(x.data),x.tipo==='entrada'?'Entrada':'Saída',x.desc,x.cat,String(x.valor).replace('.',','),x.forma,x.sit==='Pendente'?(x.tipo==='entrada'?'A receber':'A pagar'):(x.tipo==='entrada'?'Recebido':'Pago'),x.obs])));
@@ -674,14 +836,19 @@ function listaUnid(){
   return unidades.todos().sort((a,b)=>(a.id==='matriz'?-1:b.id==='matriz'?1:a.nome.localeCompare(b.nome)));
 }
 function unidAtual(){const l=listaUnid();return l.find(x=>x.id===U())||l[0]||{id:'matriz',nome:'Clube Terapia - Matriz'}}
-function mudarUnid(id){store.set('unidade',id);location.reload()}
+function mudarUnid(id){store.set('unidade',id);const e=$('unn'),u=listaUnid().find(x=>x.id===id);if(e&&u)e.textContent=u.nome;setTimeout(()=>location.reload(),350)}
 const slugUnid=n=>n.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/^clube\s*(de\s*)?terapia\s*-?\s*/,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,20);
 async function escolherUnid(){
   const at=U();
   const r=await caixa({titulo:'Unidade',sub:'Escolha com qual unidade você vai trabalhar agora',
     html:listaUnid().map(x=>'<button class="b'+(x.id===at?'':' alt')+' wide" data-a="u:'+esc(x.id)+'" style="margin-top:8px">'+(x.id===at?'✓ ':'')+esc(x.nome)+'</button>').join('')+
       '<div style="margin-top:14px"><button class="ed" data-a="nova">+ nova unidade</button><button class="ed" data-a="ren" style="margin-left:16px">renomear a atual</button></div>',
-    ok:'Fechar',semCancelar:true,acao:(a,ler,fim)=>fim({a})});
+    ok:'Fechar',semCancelar:true,acao:(a,ler,fim)=>{
+      if(a.indexOf('u:')===0){
+        document.querySelectorAll('.dlg [data-a^="u:"]').forEach(b=>{const sel=b.dataset.a===a;b.classList.toggle('alt',!sel);b.textContent=(sel?'✓ ':'')+b.textContent.replace(/^✓ /,'')});
+        setTimeout(()=>fim({a}),220);
+      }else fim({a});
+    }});
   const a=r&&r.a;if(!a)return;
   if(a.indexOf('u:')===0){if(a.slice(2)!==at)mudarUnid(a.slice(2))}
   else if(a==='nova')novaUnid();
