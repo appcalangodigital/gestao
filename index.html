@@ -53,6 +53,8 @@ input[type=text]{flex:1;min-width:0;padding:13px;border-radius:12px;border:1px s
 .ac{display:flex;flex-wrap:wrap;gap:2px 14px;margin-top:2px}
 .qty .qn{min-width:40px;background:none;border:0;font:700 1.3rem system-ui,sans-serif;color:var(--sky);cursor:pointer}
 .item.zero{opacity:.55}
+.uni{display:inline-block;margin:-4px 0 12px;padding:3px 12px;border-radius:999px;background:#e8f0fe;color:#0f4fa8;font-size:.8rem;font-weight:700}
+.unid{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin:0 0 14px;padding:12px;border:2px solid var(--pri);border-radius:14px;background:#fff;color:var(--pri);font:700 1rem system-ui,sans-serif;cursor:pointer}
 .st{display:inline-block;margin-top:4px;padding:3px 10px;border-radius:999px;font-size:.78rem;font-weight:700;color:#fff;background:#8a8f99}
 .st.v{background:#b3261e}.st.a{background:#e08a00}.st.o{background:#1f7a4d}.st.n{background:#6b7a99}
 .tot{display:flex;justify-content:space-between;font-weight:700;margin-bottom:6px}
@@ -133,6 +135,9 @@ const $=id=>document.getElementById(id);
 const app=$('app');
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const store={get(k,d){try{return JSON.parse(localStorage.getItem('calango:'+k))||d}catch(e){return d}},set(k,v){try{localStorage.setItem('calango:'+k,JSON.stringify(v))}catch(e){}}};
+/* ===== Unidades: a Matriz usa as chaves de sempre; as outras ganham o id da unidade ===== */
+const U=()=>store.get('unidade','matriz');
+const kU=k=>U()==='matriz'?k:k+'@'+U();
 let limpar=null,voltaAtual=null,porVoltar=false,agRe=null;
 /* janelas (caixas) abertas: o botão voltar do celular fecha a de cima, como o botão Cancelar */
 const dlgPilha=[];let dlgEntrada=false,dlgIgnorar=0;
@@ -147,16 +152,19 @@ function inicio(){
   if(limpar){limpar();limpar=null}
   voltaAtual=null;
   app.innerHTML='<div class="welcome"><img src="banner.png" alt="Calango Digital" width="1000" height="533" fetchpriority="high" decoding="async"><b>Bem-vindo(a)!</b><span>Seus serviços organizados em um só lugar.</span></div>'+
+    '<button class="unid" id="un">📍 <span id="unn">'+esc(unidAtual().nome)+'</span> <span>▾</span></button>'+
     '<div class="grid">'+MODULES.map(m=>'<button class="tile" data-m="'+m.id+'"><span class="ic">'+m.icone+'</span>'+esc(m.titulo)+'</button>').join('')+
     EM_BREVE.map(()=>'<div class="tile soon"><img class="lg" src="icon-192.png" alt="" width="64" height="64"><b class="eb">EM BREVE</b></div>').join('')+'</div>';
   app.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>MODULES.find(m=>m.id===b.dataset.m).abrir());
+  $('un').onclick=escolherUnid;
+  if(store.get('planilha',{}).token)unidades.sync().then(()=>{const e=$('unn');if(e)e.textContent=unidAtual().nome});
 }
 function telaModulo(t,html,volta){
   agRe=null;
   if(limpar){limpar();limpar=null}
   voltaAtual=volta||inicio;
   if(!porVoltar)history.pushState({t:1},'');
-  app.innerHTML='<button class="back" id="voltar">‹ Voltar</button><h2>'+esc(t)+'</h2>'+html;
+  app.innerHTML='<button class="back" id="voltar">‹ Voltar</button><h2>'+esc(t)+'</h2><div class="uni">📍 '+esc(unidAtual().nome)+'</div>'+html;
   $('voltar').onclick=()=>history.back();
 }
 /* botão voltar do celular: volta uma tela do app */
@@ -221,9 +229,9 @@ async function cfg(forcar){
   return c;
 }
 async function apiGet(p){const c=await cfg();if(!c)throw new Error('config');
-  const r=await fetch(c.url+'?'+new URLSearchParams({token:c.token,...p}));return r.json()}
+  const r=await fetch(c.url+'?'+new URLSearchParams({token:c.token,unid:U(),...p}));return r.json()}
 async function apiPost(b){const c=await cfg();if(!c)throw new Error('config');
-  const r=await fetch(c.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({token:c.token,...b})});return r.json()}
+  const r=await fetch(c.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({token:c.token,unid:U(),...b})});return r.json()}
 async function compartilhar(txt){
   try{if(navigator.share){await navigator.share({text:txt});return}}catch(e){return}
   try{await navigator.clipboard.writeText(txt);toast('Copiado.')}catch(e){await caixa({titulo:'Copie o texto',html:campo('t','Texto',txt),ok:'OK',semCancelar:true})}
@@ -246,7 +254,7 @@ function abrirContagem(){
   let cat=store.get('catalogo',{}),cnt={},tocados={},base={};
   let stream=null,timer=null,det=null,lastCode='',lastAt=0,AC=null;
   const TXT_CAM='Abrir câmera para ler produto novo';
-  const save=()=>{store.set('catalogo',cat);store.set('rascunho2',{cnt,tocados})};
+  const save=()=>{store.set('catalogo',cat);store.set(kU('rascunho2'),{cnt,tocados})};
   const msg=h=>{$('last').innerHTML=h};
   const agora=()=>new Date().toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
   const num=v=>Math.round((Number(String(v).replace(',','.'))||0)*1000)/1000;
@@ -313,12 +321,12 @@ function abrirContagem(){
     let itens=null,quando='',sem=false,recusou=false,semSenha=false;
     try{
       const d=await comTempo(apiGet({action:'saldo'}),9000);
-      if(d.ok){itens=d.itens;quando=agora();store.set('ultimoSaldo',{itens,quando})}
+      if(d.ok){itens=d.itens;quando=agora();store.set(kU('ultimoSaldo'),{itens,quando})}
       else{recusou=true;msg('<span class="err">A planilha recusou: '+esc(d.erro||'erro')+'. Confira a senha em “alterar senha da planilha”.</span>')}
     }catch(e){if(e.message==='config')semSenha=true;else sem=true}
-    if(!itens){const u=store.get('ultimoSaldo',null);if(u){itens=u.itens;quando=u.quando}}
+    if(!itens){const u=store.get(kU('ultimoSaldo'),null);if(u){itens=u.itens;quando=u.quando}}
     base=itens||{};nomesDe(base);
-    const r=store.get('rascunho2',null);
+    const r=store.get(kU('rascunho2'),null);
     cnt=(r&&r.cnt)||{};tocados=(r&&r.tocados)||{};
     reconstruir(true);save();render();
     const tem=Object.keys(base).length>0;
@@ -391,7 +399,7 @@ function abrirContagem(){
         if(d.ok){
           const nb={};Object.keys(saldo).forEach(c=>nb[c]=saldo[c]);
           itens.forEach(i=>nb[i.codigo]={nome:i.nome,medida:i.medida,qtd:i.qtd});
-          base=nb;store.set('ultimoSaldo',{itens:nb,quando:agora()});
+          base=nb;store.set(kU('ultimoSaldo'),{itens:nb,quando:agora()});
           cnt={};tocados={};reconstruir(false);save();render();$('cmp').innerHTML='';
           msg('<span class="ok">Salvo na planilha.</span> '+(d.inicial?'Estoque inicial registrado.':d.mov+' movimentações registradas.')+' A lista abaixo já é a base da próxima contagem.');
           window.scrollTo({top:0,behavior:'smooth'});
@@ -428,26 +436,30 @@ function abrirContagem(){
 
 /* ===== Tabelas sincronizadas com a planilha (Documentos e Financeiro) ===== */
 const tempo=(p,ms)=>Promise.race([p,new Promise((_,rj)=>setTimeout(()=>rj(new Error('tempo')),ms))]);
-function tabela(nome,cols,cab,textCols){
-  const K='tab:'+nome;
-  const L=()=>store.get(K,[]);
+function tabela(base,cols,cab,textCols,porUnid){
+  if(porUnid===undefined)porUnid=true;
+  const NOME=()=>porUnid&&U()!=='matriz'?base+' ('+U()+')':base;
+  const K=()=>'tab:'+NOME();
+  const L=()=>store.get(K(),[]);
   const T={
     busy:false,again:false,ok:false,
+    nome:NOME,
     todos:()=>L().filter(r=>!r.apagado),
-    salvar(r){const l=L();r.atu=Date.now();r.apagado=0;const i=l.findIndex(x=>x.id===r.id);if(i>=0)l[i]=r;else l.push(r);store.set(K,l)},
-    apagar(id){const l=L();const i=l.findIndex(x=>x.id===id);if(i>=0){l[i].apagado=1;l[i].atu=Date.now();store.set(K,l)}},
+    salvar(r){const l=L();r.atu=Date.now();r.apagado=0;const i=l.findIndex(x=>x.id===r.id);if(i>=0)l[i]=r;else l.push(r);store.set(K(),l)},
+    apagar(id){const l=L();const i=l.findIndex(x=>x.id===id);if(i>=0){l[i].apagado=1;l[i].atu=Date.now();store.set(K(),l)}},
     async sync(){
       if(T.busy){T.again=true;return T.ok}
       T.busy=true;
+      const nm=NOME(),kk=K();
       try{
-        const d=await tempo(apiGet({action:'tab_listar',nome}),12000);
+        const d=await tempo(apiGet({action:'tab_listar',nome:nm}),12000);
         if(!d.ok)throw new Error(d.erro==='ação'?'atualize o script da planilha':(d.erro||'erro'));
         const m={};
         (d.linhas||[]).forEach(a=>{const o={};cols.forEach((c,i)=>o[c]=a[i]===undefined?'':a[i]);o.atu=Number(o.atu)||0;o.apagado=Number(o.apagado)?1:0;if(o.id!=='')m[o.id]=o});
-        L().forEach(o=>{const r=m[o.id];if(!r||o.atu>r.atu)m[o.id]=o});
+        store.get(kk,[]).forEach(o=>{const r=m[o.id];if(!r||o.atu>r.atu)m[o.id]=o});
         const todos=Object.keys(m).map(k=>m[k]);
-        store.set(K,todos);
-        const r=await tempo(apiPost({acao:'tab_salvar',nome,cols,cab,textCols,linhas:todos.map(o=>cols.map(c=>o[c]==null?'':o[c]))}),15000);
+        store.set(kk,todos);
+        const r=await tempo(apiPost({acao:'tab_salvar',nome:nm,cols,cab,textCols,linhas:todos.map(o=>cols.map(c=>o[c]==null?'':o[c]))}),15000);
         if(!r.ok)throw new Error(r.erro||'erro');
         T.ok=true;T.erro='';
       }catch(e){T.ok=false;T.erro=e.message}
@@ -508,11 +520,12 @@ const docs=tabela('Documentos',['id','nome','orgao','numero','cat','emi','val','
 let docsFiltro='todos';
 
 function semearDocs(){
-  if(store.get('tab:Documentos:semeado',0))return;
-  const l=store.get('tab:Documentos',[]),ids={};
+  const nm=docs.nome(),fk='tab:'+nm+':semeado';
+  if(store.get(fk,0))return;
+  const l=store.get('tab:'+nm,[]),ids={};
   l.forEach(x=>ids[x.id]=1);
   DOCS_PADRAO.forEach((p,i)=>{const id='p'+(i+1);if(!ids[id])l.push({id,nome:p[0],orgao:p[1],numero:'',cat:p[2],emi:'',val:'',nv:p[4],aviso:30,per:p[3],obs:p[5],atu:1,apagado:0})});
-  store.set('tab:Documentos',l);store.set('tab:Documentos:semeado',1);
+  store.set('tab:'+nm,l);store.set(fk,1);
 }
 function docInfo(d){
   if(Number(d.nv))return{k:'n',txt:'Não vence',ord:2e9};
@@ -642,11 +655,56 @@ function abrirFin(){
   $('fx').onclick=()=>{
     const l=doMes().sort((a,b)=>String(a.data).localeCompare(String(b.data)));
     if(!l.length){toast('Nada para baixar neste mês.');return}
-    baixarCSV('financeiro-'+finMes+'.csv',[['Financeiro',nomeMes(finMes)],[],['Data','Tipo','Descrição','Categoria','Valor','Forma','Situação','Observações']]
+    baixarCSV('financeiro-'+finMes+'.csv',[['Financeiro - '+unidAtual().nome,nomeMes(finMes)],[],['Data','Tipo','Descrição','Categoria','Valor','Forma','Situação','Observações']]
       .concat(l.map(x=>[brD(x.data),x.tipo==='entrada'?'Entrada':'Saída',x.desc,x.cat,String(x.valor).replace('.',','),x.forma,x.sit==='Pendente'?(x.tipo==='entrada'?'A receber':'A pagar'):(x.tipo==='entrada'?'Recebido':'Pago'),x.obs])));
   };
   pinta();
   marcaSync(fin).then(pinta);
+}
+
+/* ===== Unidades (Matriz, Sul e as próximas) ===== */
+const UNID_PADRAO=[['matriz','Clube Terapia - Matriz'],['sul','Clube Terapia - Sul']];
+const unidades=tabela('Unidades',['id','nome','atu','apagado'],['ID','Unidade','Atualizado (código)','Apagado (1=sim)'],[1,2],false);
+function listaUnid(){
+  if(!store.get('tab:Unidades:semeado',0)){
+    const l=store.get('tab:Unidades',[]),ids={};l.forEach(x=>ids[x.id]=1);
+    UNID_PADRAO.forEach(p=>{if(!ids[p[0]])l.push({id:p[0],nome:p[1],atu:1,apagado:0})});
+    store.set('tab:Unidades',l);store.set('tab:Unidades:semeado',1);
+  }
+  return unidades.todos().sort((a,b)=>(a.id==='matriz'?-1:b.id==='matriz'?1:a.nome.localeCompare(b.nome)));
+}
+function unidAtual(){const l=listaUnid();return l.find(x=>x.id===U())||l[0]||{id:'matriz',nome:'Clube Terapia - Matriz'}}
+function mudarUnid(id){store.set('unidade',id);location.reload()}
+const slugUnid=n=>n.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/^clube\s*(de\s*)?terapia\s*-?\s*/,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,20);
+async function escolherUnid(){
+  const at=U();
+  const r=await caixa({titulo:'Unidade',sub:'Escolha com qual unidade você vai trabalhar agora',
+    html:listaUnid().map(x=>'<button class="b'+(x.id===at?'':' alt')+' wide" data-a="u:'+esc(x.id)+'" style="margin-top:8px">'+(x.id===at?'✓ ':'')+esc(x.nome)+'</button>').join('')+
+      '<div style="margin-top:14px"><button class="ed" data-a="nova">+ nova unidade</button><button class="ed" data-a="ren" style="margin-left:16px">renomear a atual</button></div>',
+    ok:'Fechar',semCancelar:true,acao:(a,ler,fim)=>fim({a})});
+  const a=r&&r.a;if(!a)return;
+  if(a.indexOf('u:')===0){if(a.slice(2)!==at)mudarUnid(a.slice(2))}
+  else if(a==='nova')novaUnid();
+  else if(a==='ren')renomearUnid();
+}
+async function novaUnid(){
+  const r=await caixa({titulo:'Nova unidade',html:campo('n','Nome da unidade','Clube Terapia - ','text','autocapitalize="words"'),ok:'Criar'});
+  if(!r)return;
+  const n=r.n.trim();
+  if(!n||/^clube terapia\s*-?\s*$/i.test(n)){await avisar('Falta o nome','Digite o nome da unidade, por exemplo: Clube Terapia - Norte.');return}
+  let id=slugUnid(n)||('u'+uid().slice(0,4));
+  if(id==='matriz'||listaUnid().some(x=>x.id===id))id=id+'-'+uid().slice(0,3);
+  unidades.salvar({id,nome:n});
+  if(store.get('planilha',{}).token)await unidades.sync();
+  mudarUnid(id);
+}
+async function renomearUnid(){
+  const at=unidAtual();
+  const r=await caixa({titulo:'Renomear unidade',html:campo('n','Nome da unidade',at.nome,'text','autocapitalize="words"'),ok:'Salvar'});
+  if(!r||!r.n.trim())return;
+  unidades.salvar({id:at.id,nome:r.n.trim()});
+  if(store.get('planilha',{}).token)unidades.sync();
+  inicio();
 }
 
 /* ===== Agendas dos profissionais ===== */
@@ -655,8 +713,8 @@ const AG_STATUS={agendada:['Agendada','#5a6b8c'],confirmada:['Confirmada','#1760
 const AG_TIPOS={particular:'Particular',convenio:'Convênio',cortesia:'Cortesia (divulgação)'};
 const AG_DIAS=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 const ag={
-  get(){const d=store.get('agendas',{profs:[],cons:[]});d.profs=d.profs||[];d.cons=d.cons||[];return d},
-  set(d){store.set('agendas',d)}
+  get(){const d=store.get(kU('agendas'),{profs:[],cons:[]});d.profs=d.profs||[];d.cons=d.cons||[];return d},
+  set(d){store.set(kU('agendas'),d)}
 };
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const hojeIso=()=>isoD(new Date());
@@ -684,8 +742,8 @@ function zap(c,p){
 /* ---- sincronização com a planilha do Google ---- */
 const agFila={
   vazia:()=>({profs:{},cons:{},delProfs:[],delCons:[]}),
-  get(){const f=store.get('agfila',null);return f&&f.profs&&f.cons&&f.delProfs&&f.delCons?f:agFila.vazia()},
-  set(f){store.set('agfila',f)},
+  get(){const f=store.get(kU('agfila'),null);return f&&f.profs&&f.cons&&f.delProfs&&f.delCons?f:agFila.vazia()},
+  set(f){store.set(kU('agfila'),f)},
   total(f){return Object.keys(f.profs).length+Object.keys(f.cons).length+f.delProfs.length+f.delCons.length},
   upProf(p){const f=agFila.get();f.profs[p.id]=p;f.delProfs=f.delProfs.filter(x=>x!==p.id);agFila.set(f)},
   upCons(c){const f=agFila.get();f.cons[c.id]=c;f.delCons=f.delCons.filter(x=>x!==c.id);agFila.set(f)},
@@ -739,7 +797,7 @@ async function agSync(manual){
   agBusy=true;agEstado={s:'sync'};agPinta();
   let ok=false,mudou=false,msg='';
   try{
-    if(!store.get('agsync2',0)){
+    if(!store.get(kU('agsync2'),0)){
       /* primeira vez: envia para a planilha o que já existe neste celular */
       const l=ag.get();l.profs.forEach(p=>agFila.upProf(p));l.cons.forEach(c=>agFila.upCons(c));
     }
@@ -755,7 +813,7 @@ async function agSync(manual){
     if(!g.ok)throw new Error(g.erro||'erro');
     const novo=agAplicaFila({profs:g.profs||[],cons:g.cons||[]},agFila.get());
     mudou=JSON.stringify(novo)!==JSON.stringify(ag.get());
-    ag.set(novo);store.set('agsync2',Date.now());
+    ag.set(novo);store.set(kU('agsync2'),Date.now());
     ok=true;
   }catch(e){
     msg=String(e&&e.message||'');
@@ -771,7 +829,7 @@ async function agSync(manual){
 }
 function agIniciar(re){
   agRe=re;agPinta();
-  if(agPend()||!store.get('agsync2',0)||Date.now()-agUltimo>30000)agSync();
+  if(agPend()||!store.get(kU('agsync2'),0)||Date.now()-agUltimo>30000)agSync();
 }
 setInterval(()=>{if(agRe&&!document.hidden)agSync()},60000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&agRe)agSync()});
@@ -852,7 +910,7 @@ async function formConsulta(c,pidTela,data,pre){
   if(!p0)return null;
   const v=pre||c||{pac:'',tel:'',data:data,hora:'',tipo:'particular',status:'agendada',obs:''};
   const html=
-    campo('pac','Paciente',v.pac,'text','placeholder="Nome do paciente" autocapitalize="words"')+
+    campo('pac','Paciente (nome e parte do sobrenome)',v.pac,'text','placeholder="Ex: Maria Sil." autocapitalize="words"')+
     campo('tel','Telefone / WhatsApp',v.tel,'tel','inputmode="tel" placeholder="(85) 99999-9999"')+
     campo('data','Dia da consulta',v.data,'date')+
     campo('hora','Horário da consulta',v.hora,'time')+
@@ -1069,7 +1127,7 @@ async function baixarRelatorio(p,volta){
       '<button class="b wide" id="csv">Baixar planilha (CSV, abre no Excel)</button><button class="b alt wide" id="pdf">Salvar em PDF</button>';
     $('csv').onclick=()=>{
       const q=v=>'"'+String(v).replace(/"/g,'""')+'"';
-      const L=[['Relatório '+NOMEP[p]+' de estoque',brD(R.de)+' a '+brD(R.ate)],[],['Código','Produto','Medida','Entrou','Saiu','Saldo']]
+      const L=[['Relatório '+NOMEP[p]+' de estoque - '+unidAtual().nome,brD(R.de)+' a '+brD(R.ate)],[],['Código','Produto','Medida','Entrou','Saiu','Saldo']]
         .concat(R.lin.map(l=>['="'+l.cod+'"',l.nome,l.medida,l.e,l.s,l.sd])).concat([[],['Total','','',R.te,R.ts,'']]);
       const a=document.createElement('a');
       a.href=URL.createObjectURL(new Blob(['\ufeff'+L.map(r=>r.map(q).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'}));
